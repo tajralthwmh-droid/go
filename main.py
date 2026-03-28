@@ -148,23 +148,18 @@ def get_active_devices():
     return c.fetchall()
 
 def get_all_known_devices():
-    """الحصول على جميع الأجهزة المعروفة (من approvals و active_devices)"""
+    """الحصول على جميع الأجهزة المعروفة"""
     devices = {}
-    
-    # من approvals
     c.execute("SELECT DISTINCT device_name, username FROM approvals ORDER BY timestamp DESC")
     for row in c.fetchall():
         device_name, username = row
         if device_name not in devices:
             devices[device_name] = username
-    
-    # من active_devices
     c.execute("SELECT device_name, username FROM active_devices")
     for row in c.fetchall():
         device_name, username = row
         if device_name not in devices:
             devices[device_name] = username
-    
     return devices
 
 # ===================== دوال الحظر =====================
@@ -172,14 +167,11 @@ def ban_device(device_name, username, ban_type="permanent", days=0, reason="مح
     """حظر جهاز"""
     now = int(time.time())
     banned_until = now + (days * 86400) if ban_type == "temporary" else 0
-    
     c.execute("""INSERT OR REPLACE INTO banned_devices 
                  (device_name, username, banned_at, banned_until, ban_type, reason) 
                  VALUES (?, ?, ?, ?, ?, ?)""",
               (device_name, username, now, banned_until, ban_type, reason))
     conn.commit()
-    
-    # إزالة الجهاز من قائمة الأجهزة النشطة
     remove_active_device(device_name)
 
 def unban_device(device_name):
@@ -248,9 +240,8 @@ bot = telegram.Bot(token=BOT_TOKEN)
 pending_requests = {}
 
 CUSTOM_LOGO = get_setting("custom_logo", "𓆩♛✦𓆪 TOMB OF MAKROTEC 𓆩♛✦𓆪")
-WELCOME_MESSAGE = get_setting("welcome_message", "✨ مرحباً بك في نظام حماية تطبيق Tomb ✨")
+WELCOME_MESSAGE = get_setting("welcome_message", "🔐 طلب فتح التطبيق")
 
-# ===================== دوال البوت =====================
 def send_main_menu(chat_id):
     """إرسال القائمة الرئيسية بالأزرار"""
     logo = get_setting("custom_logo", CUSTOM_LOGO)
@@ -305,7 +296,6 @@ def send_approval_request(request_id, app_name="Tomb", username="Unknown",
     custom_logo = get_setting("custom_logo", CUSTOM_LOGO)
     welcome_msg = get_setting("welcome_message", WELCOME_MESSAGE)
     
-    # إضافة الجهاز إلى قائمة الأجهزة النشطة
     add_active_device(device_name, username, device_info)
     
     message_text = f"""
@@ -385,8 +375,7 @@ def show_device_list_for_ban(chat_id, message_id=None):
         return
     
     keyboard = []
-    for device_name, username in list(devices.items())[:20]:  # عرض 20 جهاز كحد أقصى
-        # التحقق إذا كان الجهاز محظوراً بالفعل
+    for device_name, username in list(devices.items())[:20]:
         if not is_device_banned(device_name):
             keyboard.append([InlineKeyboardButton(f"📱 {device_name} (👤 {username})", callback_data=f"select_ban_{device_name}")])
     
@@ -409,7 +398,6 @@ def show_device_list_for_ban(chat_id, message_id=None):
         return
     
     keyboard.append([InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")])
-    
     text = "🔒 **اختر الجهاز المراد حظره:**\n\n"
     
     if message_id:
@@ -456,7 +444,6 @@ def show_device_list_for_unban(chat_id, message_id=None):
         keyboard.append([InlineKeyboardButton(f"📱 {device_name} (👤 {username}) - {ban_info}", callback_data=f"select_unban_{device_name}")])
     
     keyboard.append([InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")])
-    
     text = "🔓 **اختر الجهاز لرفع الحظر عنه:**\n\n"
     
     if message_id:
@@ -486,14 +473,9 @@ def handle_callback(update, context):
     # ========== اختيار جهاز للحظر ==========
     if data.startswith("select_ban_"):
         device_name = data[11:]
-        
-        # الحصول على معلومات الجهاز
         c.execute("SELECT username FROM approvals WHERE device_name = ? ORDER BY timestamp DESC LIMIT 1", (device_name,))
         row = c.fetchone()
         username = row[0] if row else "Unknown"
-        
-        context.user_data['ban_device_name'] = device_name
-        context.user_data['ban_username'] = username
         
         keyboard = [
             [InlineKeyboardButton("🔒 حظر دائم", callback_data=f"ban_confirm_permanent_{device_name}")],
@@ -522,7 +504,6 @@ def handle_callback(update, context):
                 days = int(parts[3])
                 device_name = "_".join(parts[4:])
             
-            # الحصول على اسم المستخدم
             c.execute("SELECT username FROM approvals WHERE device_name = ? ORDER BY timestamp DESC LIMIT 1", (device_name,))
             row = c.fetchone()
             username = row[0] if row else "Unknown"
@@ -581,6 +562,7 @@ def handle_callback(update, context):
                 text="✅ لا توجد طلبات معلقة",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
+        return
     
     elif data == "menu_stats":
         stats = get_access_stats()
@@ -602,6 +584,80 @@ def handle_callback(update, context):
             parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+        return
+    
+    elif data == "menu_approved":
+        approved_reqs = c.execute(
+            "SELECT username, device_name, timestamp FROM approvals WHERE status='approved' ORDER BY timestamp DESC LIMIT 20"
+        ).fetchall()
+        
+        if approved_reqs:
+            text_msg = "✅ *الطلبات المقبولة:*\n\n"
+            for req in approved_reqs:
+                time_str = datetime.fromtimestamp(req[2]).strftime('%Y-%m-%d %H:%M')
+                text_msg += f"👤 {req[0]} - {req[1]} - {time_str}\n"
+            keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
+            query.edit_message_text(
+                text=text_msg,
+                parse_mode=telegram.ParseMode.MARKDOWN,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
+            query.edit_message_text(
+                text="📭 لا توجد طلبات مقبولة",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        return
+    
+    elif data == "menu_denied":
+        denied_reqs = c.execute(
+            "SELECT username, device_name, timestamp FROM approvals WHERE status='denied' ORDER BY timestamp DESC LIMIT 20"
+        ).fetchall()
+        
+        if denied_reqs:
+            text_msg = "❌ *الطلبات المرفوضة:*\n\n"
+            for req in denied_reqs:
+                time_str = datetime.fromtimestamp(req[2]).strftime('%Y-%m-%d %H:%M')
+                text_msg += f"👤 {req[0]} - {req[1]} - {time_str}\n"
+            keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
+            query.edit_message_text(
+                text=text_msg,
+                parse_mode=telegram.ParseMode.MARKDOWN,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
+            query.edit_message_text(
+                text="📭 لا توجد طلبات مرفوضة",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        return
+    
+    elif data == "menu_logs":
+        logs = c.execute(
+            "SELECT username, device_name, status, timestamp FROM access_logs ORDER BY timestamp DESC LIMIT 20"
+        ).fetchall()
+        
+        if logs:
+            log_text = "📋 *سجل الدخول الأخير:*\n\n"
+            for log in logs:
+                time_str = datetime.fromtimestamp(log[3]).strftime('%Y-%m-%d %H:%M')
+                emoji = "✅" if log[2] == "approved" else "❌"
+                log_text += f"{emoji} {log[0]} - {log[1]} - {time_str}\n"
+            keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
+            query.edit_message_text(
+                text=log_text,
+                parse_mode=telegram.ParseMode.MARKDOWN,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
+            query.edit_message_text(
+                text="📭 لا يوجد سجل",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        return
     
     elif data == "menu_active_devices":
         devices = get_active_devices()
@@ -627,6 +683,7 @@ def handle_callback(update, context):
                 text="📭 لا توجد أجهزة نشطة",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
+        return
     
     elif data == "menu_banned_devices":
         devices = get_banned_devices()
@@ -638,7 +695,7 @@ def handle_callback(update, context):
                 banned_at_str = datetime.fromtimestamp(banned_at).strftime('%Y-%m-%d %H:%M')
                 if ban_type == "temporary" and banned_until > 0:
                     remaining = (banned_until - int(time.time())) // 86400
-                    expiry = f"⏰ متبقي {remaining} يوم"
+                    expiry = f"⏰ متبقي {remaining} يوم" if remaining > 0 else "⏰ ينتهي اليوم"
                 else:
                     expiry = "🔒 دائم"
                 text_msg += f"📱 **{device_name}**\n   👤 {username}\n   🗓️ حظر في: {banned_at_str}\n   ⏱️ {expiry}\n   📝 السبب: {reason}\n\n"
@@ -657,6 +714,7 @@ def handle_callback(update, context):
                 text="✅ لا توجد أجهزة محظورة",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
+        return
     
     elif data == "menu_clear_requests":
         c.execute("DELETE FROM approvals WHERE status != 'pending'")
@@ -666,6 +724,7 @@ def handle_callback(update, context):
             text="🗑️ تم مسح جميع الطلبات المنتهية بنجاح",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+        return
     
     elif data == "menu_settings":
         logo = get_setting("custom_logo", CUSTOM_LOGO)
@@ -693,6 +752,7 @@ def handle_callback(update, context):
             parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+        return
     
     elif data == "change_logo":
         query.edit_message_text(
@@ -700,6 +760,7 @@ def handle_callback(update, context):
             parse_mode=telegram.ParseMode.MARKDOWN
         )
         context.user_data['waiting_for_logo'] = True
+        return
     
     elif data == "change_welcome":
         query.edit_message_text(
@@ -707,6 +768,7 @@ def handle_callback(update, context):
             parse_mode=telegram.ParseMode.MARKDOWN
         )
         context.user_data['waiting_for_welcome'] = True
+        return
     
     elif data == "change_password":
         query.edit_message_text(
@@ -714,6 +776,7 @@ def handle_callback(update, context):
             parse_mode=telegram.ParseMode.MARKDOWN
         )
         context.user_data['waiting_for_new_password'] = True
+        return
     
     elif data == "menu_temp_password":
         keyboard = [
@@ -725,6 +788,7 @@ def handle_callback(update, context):
             parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+        return
     
     elif data == "create_temp_password":
         devices = get_all_known_devices()
@@ -742,15 +806,15 @@ def handle_callback(update, context):
             parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+        return
     
     elif data.startswith("temp_pass_"):
         device_name = data[9:]
         
-        # إنشاء كلمة مرور مؤقتة
         temp_password = hashlib.md5(f"{device_name}{time.time()}".encode()).hexdigest()[:8]
         temp_hash = hashlib.sha256(temp_password.encode()).hexdigest()
         now = int(time.time())
-        expires_at = now + 86400  # 24 ساعة
+        expires_at = now + 86400
         
         c.execute("""INSERT INTO temp_passwords (password_hash, device_name, created_at, expires_at) 
                      VALUES (?, ?, ?, ?)""",
@@ -763,6 +827,7 @@ def handle_callback(update, context):
             parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+        return
     
     elif data == "back_to_main":
         send_main_menu(chat_id)
@@ -770,6 +835,7 @@ def handle_callback(update, context):
             query.delete_message()
         except:
             pass
+        return
     
     # ========== معالجة الطلبات ==========
     elif data.startswith("approve_"):
@@ -794,6 +860,7 @@ def handle_callback(update, context):
             )
         except:
             pass
+        return
     
     elif data.startswith("deny_"):
         request_id = data[5:]
@@ -817,6 +884,7 @@ def handle_callback(update, context):
             )
         except:
             pass
+        return
     
     elif data.startswith("ban_this_"):
         request_id = data[9:]
@@ -824,8 +892,6 @@ def handle_callback(update, context):
         row = c.fetchone()
         if row:
             device_name, username = row
-            context.user_data['ban_device_name'] = device_name
-            context.user_data['ban_username'] = username
             
             keyboard = [
                 [InlineKeyboardButton("🔒 حظر دائم", callback_data=f"ban_confirm_permanent_{device_name}")],
@@ -839,6 +905,7 @@ def handle_callback(update, context):
                 parse_mode=telegram.ParseMode.MARKDOWN,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
+        return
     
     elif data.startswith("info_"):
         request_id = data[5:]
@@ -864,6 +931,7 @@ def handle_callback(update, context):
             )
         else:
             query.edit_message_text("❌ لم يتم العثور على الطلب")
+        return
 
 def handle_message(update, context):
     message = update.message
@@ -874,7 +942,6 @@ def handle_message(update, context):
         bot.send_message(chat_id=chat_id, text="⚠️ أنت غير مصرح لك باستخدام هذا البوت")
         return
     
-    # معالجة تغيير الشعار
     if context.user_data.get('waiting_for_logo'):
         new_logo = text.strip()
         set_setting("custom_logo", new_logo)
@@ -883,7 +950,6 @@ def handle_message(update, context):
         send_main_menu(chat_id)
         return
     
-    # معالجة تغيير رسالة الترحيب
     if context.user_data.get('waiting_for_welcome'):
         new_welcome = text.strip()
         set_setting("welcome_message", new_welcome)
@@ -892,7 +958,6 @@ def handle_message(update, context):
         send_main_menu(chat_id)
         return
     
-    # معالجة تغيير كلمة المرور
     if context.user_data.get('waiting_for_new_password'):
         new_password = text.strip()
         if len(new_password) >= 4:
@@ -910,7 +975,6 @@ def handle_message(update, context):
         send_main_menu(chat_id)
         return
     
-    # إذا كان الأمر /start
     if text == '/start':
         send_main_menu(chat_id)
     else:
@@ -934,7 +998,28 @@ bot_thread = threading.Thread(target=run_bot)
 bot_thread.daemon = True
 bot_thread.start()
 
-# ===================== API للتطبيق =====================
+# ===================== API للتطبيق (المسارات الأساسية) =====================
+@app.route('/', methods=['GET'])
+def home():
+    """الصفحة الرئيسية"""
+    return jsonify({
+        "status": "online",
+        "service": "Tomb Bot Protection System",
+        "version": "4.5",
+        "endpoints": [
+            "/request_access - POST",
+            "/check_status/<request_id> - GET", 
+            "/verify_password - POST",
+            "/change_password - POST",
+            "/update_settings - POST",
+            "/get_settings - GET",
+            "/get_stats - GET",
+            "/check_device_status - POST",
+            "/verify_temp_password - POST",
+            "/health - GET"
+        ]
+    })
+
 @app.route('/request_access', methods=['POST'])
 def request_access():
     try:
@@ -950,7 +1035,6 @@ def request_access():
         
         ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
         
-        # التحقق من حظر الجهاز
         if is_device_banned(device_name):
             ban_info = get_device_ban_info(device_name)
             return jsonify({
@@ -961,7 +1045,6 @@ def request_access():
                 "remaining_days": ban_info['remaining_days']
             })
         
-        # التحقق من كلمة المرور المؤقتة
         temp_password = data.get('temp_password')
         if temp_password:
             temp_hash = hashlib.sha256(temp_password.encode()).hexdigest()
@@ -970,7 +1053,6 @@ def request_access():
                       (temp_hash, int(time.time())))
             row = c.fetchone()
             if row:
-                # كلمة مرور مؤقتة صالحة
                 c.execute("UPDATE temp_passwords SET used = 1 WHERE password_hash = ?", (temp_hash,))
                 conn.commit()
                 return jsonify({"status": "approved", "message": "تم الدخول عبر كلمة مرور مؤقتة"})
@@ -991,29 +1073,37 @@ def request_access():
 
 @app.route('/check_status/<request_id>', methods=['GET'])
 def check_status(request_id):
-    """التحقق من حالة الطلب - تم إصلاح المشكلة"""
+    """التحقق من حالة الطلب"""
     try:
-        # أولاً: التحقق من الذاكرة المؤقتة (أسرع)
         if request_id in pending_requests:
             status = pending_requests[request_id]["status"]
-            # إذا لم تعد معلقة، نحذفها من الذاكرة
             if status != "pending":
                 del pending_requests[request_id]
             return jsonify({"status": status})
         
-        # ثانياً: البحث في قاعدة البيانات
         c.execute("SELECT status FROM approvals WHERE request_id = ?", (request_id,))
         row = c.fetchone()
-        
         if row:
             return jsonify({"status": row[0]})
         
-        # إذا لم يتم العثور على الطلب
         return jsonify({"status": "pending"})
     
     except Exception as e:
-        print(f"Error in check_status: {e}")
         return jsonify({"status": "pending"}), 500
+
+@app.route('/verify_password', methods=['POST'])
+def verify_password():
+    """التحقق من كلمة المرور"""
+    try:
+        data = request.json
+        password = data.get('password', '')
+        
+        if check_password(password):
+            return jsonify({"valid": True})
+        return jsonify({"valid": False})
+    
+    except Exception as e:
+        return jsonify({"valid": False, "error": str(e)}), 500
 
 @app.route('/verify_temp_password', methods=['POST'])
 def verify_temp_password():
@@ -1034,20 +1124,6 @@ def verify_temp_password():
             conn.commit()
             return jsonify({"valid": True})
         
-        return jsonify({"valid": False})
-    
-    except Exception as e:
-        return jsonify({"valid": False, "error": str(e)}), 500
-
-@app.route('/verify_password', methods=['POST'])
-def verify_password():
-    """التحقق من كلمة المرور"""
-    try:
-        data = request.json
-        password = data.get('password', '')
-        
-        if check_password(password):
-            return jsonify({"valid": True})
         return jsonify({"valid": False})
     
     except Exception as e:
