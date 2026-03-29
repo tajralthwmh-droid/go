@@ -842,6 +842,8 @@ def handle_callback(update, context):
         request_id = data[8:]
         status = "approved"
         
+        print(f"✅ Approving request: {request_id}")  # للتصحيح
+        
         if request_id in pending_requests:
             pending_requests[request_id]["status"] = status
         
@@ -865,6 +867,8 @@ def handle_callback(update, context):
     elif data.startswith("deny_"):
         request_id = data[5:]
         status = "denied"
+        
+        print(f"❌ Denying request: {request_id}")  # للتصحيح
         
         if request_id in pending_requests:
             pending_requests[request_id]["status"] = status
@@ -1006,6 +1010,7 @@ def home():
         "status": "online",
         "service": "Tomb Bot Protection System",
         "version": "4.5",
+        "message": "API is working!",
         "endpoints": [
             "/request_access - POST",
             "/check_status/<request_id> - GET", 
@@ -1034,6 +1039,8 @@ def request_access():
             return jsonify({"error": "missing request_id"}), 400
         
         ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
+        
+        print(f"📱 New request from {device_name} - ID: {request_id}")  # للتصحيح
         
         if is_device_banned(device_name):
             ban_info = get_device_ban_info(device_name)
@@ -1069,26 +1076,36 @@ def request_access():
         return jsonify({"status": "sent", "request_id": request_id})
     
     except Exception as e:
+        print(f"Error in request_access: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/check_status/<request_id>', methods=['GET'])
 def check_status(request_id):
-    """التحقق من حالة الطلب"""
+    """التحقق من حالة الطلب - الأهم للتطبيق"""
     try:
+        print(f"🔍 Checking status for: {request_id}")  # للتصحيح
+        
+        # أولاً: التحقق من الذاكرة المؤقتة
         if request_id in pending_requests:
             status = pending_requests[request_id]["status"]
-            if status != "pending":
-                del pending_requests[request_id]
+            print(f"📌 Found in memory: {status}")  # للتصحيح
             return jsonify({"status": status})
         
+        # ثانياً: البحث في قاعدة البيانات
         c.execute("SELECT status FROM approvals WHERE request_id = ?", (request_id,))
         row = c.fetchone()
-        if row:
-            return jsonify({"status": row[0]})
         
+        if row:
+            status = row[0]
+            print(f"💾 Found in database: {status}")  # للتصحيح
+            return jsonify({"status": status})
+        
+        # إذا لم يتم العثور على الطلب
+        print(f"❌ Request not found: {request_id}")  # للتصحيح
         return jsonify({"status": "pending"})
     
     except Exception as e:
+        print(f"Error in check_status: {e}")
         return jsonify({"status": "pending"}), 500
 
 @app.route('/verify_password', methods=['POST'])
