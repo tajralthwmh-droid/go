@@ -1013,8 +1013,8 @@ def home():
     return jsonify({
         "status": "online",
         "service": "Tomb Bot Protection System",
-        "version": "4.6",
-        "message": "API is working! (Fixed check_status issue)",
+        "version": "4.7",
+        "message": "API is working! (Added notify_app_opened endpoint)",
         "endpoints": [
             "/request_access - POST",
             "/check_status/<request_id> - GET", 
@@ -1025,6 +1025,7 @@ def home():
             "/get_stats - GET",
             "/check_device_status - POST",
             "/verify_temp_password - POST",
+            "/notify_app_opened - POST",
             "/health - GET"
         ]
     })
@@ -1220,6 +1221,8 @@ def check_device_status():
     try:
         data = request.json
         device_name = data.get('device_name', '')
+        device_info = data.get('device_info', '')
+        ip_address = data.get('ip_address', request.headers.get('X-Forwarded-For', request.remote_addr))
         
         if is_device_banned(device_name):
             ban_info = get_device_ban_info(device_name)
@@ -1232,14 +1235,51 @@ def check_device_status():
         return jsonify({"banned": False})
     
     except Exception as e:
+        print(f"Error in check_device_status: {e}")
         return jsonify({"banned": False, "error": str(e)}), 500
+
+@app.route('/notify_app_opened', methods=['POST'])
+def notify_app_opened():
+    """استقبال إشعار من التطبيق بأن الجهاز فتح التطبيق (بدون طلب موافقة)"""
+    try:
+        data = request.json
+        device_name = data.get('device_name', 'Unknown')
+        device_info = data.get('device_info', 'Unknown')
+        ip_address = data.get('ip_address', 'Unknown')
+        
+        # إرسال إشعار للمطور
+        message = f"""
+📱 *جهاز فتح التطبيق* 📱
+
+📱 *الجهاز:* `{device_name}`
+ℹ️ *المعلومات:* `{device_info}`
+🌐 *IP:* `{ip_address}`
+🕐 *الوقت:* `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`
+
+✅ هذا مجرد إشعار بفتح التطبيق، ليس طلب موافقة
+"""
+        bot.send_message(chat_id=ADMIN_CHAT_ID, text=message, parse_mode=telegram.ParseMode.MARKDOWN)
+        
+        # أيضاً نسجل في قاعدة البيانات
+        c.execute("""INSERT INTO access_logs (username, device_name, ip_address, status, timestamp) 
+                     VALUES (?, ?, ?, ?, ?)""",
+                  ("SYSTEM", device_name, ip_address, "app_opened", int(time.time())))
+        conn.commit()
+        
+        print(f"📱 App opened notification: {device_name} from {ip_address}")
+        
+        return jsonify({"status": "received"})
+    
+    except Exception as e:
+        print(f"Error in notify_app_opened: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({
         "status": "ok",
         "bot": "running",
-        "version": "4.6",
+        "version": "4.7",
         "timestamp": int(time.time())
     })
 
