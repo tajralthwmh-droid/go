@@ -837,20 +837,20 @@ def handle_callback(update, context):
             pass
         return
     
-    # ========== معالجة الطلبات (مع إبقاء الطلب في الذاكرة) ==========
+    # ========== معالجة الطلبات ==========
     elif data.startswith("approve_"):
         request_id = data[8:]
         status = "approved"
         
         print(f"✅ Approving request: {request_id}")
         
-        # تحديث الحالة في الذاكرة (لا نحذفها)
-        if request_id in pending_requests:
-            pending_requests[request_id]["status"] = status
-        
-        # تحديث قاعدة البيانات
+        # تحديث قاعدة البيانات أولاً
         c.execute("UPDATE approvals SET status = ? WHERE request_id = ?", (status, request_id))
         conn.commit()
+        
+        # تحديث الذاكرة المؤقتة بعد قاعدة البيانات
+        if request_id in pending_requests:
+            pending_requests[request_id]["status"] = status
         
         c.execute("SELECT username, device_name, ip_address FROM approvals WHERE request_id = ?", (request_id,))
         row = c.fetchone()
@@ -872,13 +872,13 @@ def handle_callback(update, context):
         
         print(f"❌ Denying request: {request_id}")
         
-        # تحديث الحالة في الذاكرة (لا نحذفها)
-        if request_id in pending_requests:
-            pending_requests[request_id]["status"] = status
-        
-        # تحديث قاعدة البيانات
+        # تحديث قاعدة البيانات أولاً
         c.execute("UPDATE approvals SET status = ? WHERE request_id = ?", (status, request_id))
         conn.commit()
+        
+        # تحديث الذاكرة المؤقتة بعد قاعدة البيانات
+        if request_id in pending_requests:
+            pending_requests[request_id]["status"] = status
         
         c.execute("SELECT username, device_name, ip_address FROM approvals WHERE request_id = ?", (request_id,))
         row = c.fetchone()
@@ -1013,8 +1013,8 @@ def home():
     return jsonify({
         "status": "online",
         "service": "Tomb Bot Protection System",
-        "version": "4.5",
-        "message": "API is working!",
+        "version": "4.6",
+        "message": "API is working! (Fixed check_status issue)",
         "endpoints": [
             "/request_access - POST",
             "/check_status/<request_id> - GET", 
@@ -1085,23 +1085,28 @@ def request_access():
 
 @app.route('/check_status/<request_id>', methods=['GET'])
 def check_status(request_id):
-    """التحقق من حالة الطلب - تم الإصلاح"""
+    """التحقق من حالة الطلب - تم الإصلاح (قاعدة البيانات أولاً)"""
     try:
         print(f"🔍 Checking status for: {request_id}")
         
-        # أولاً: التحقق من الذاكرة المؤقتة (الأهم)
-        if request_id in pending_requests:
-            status = pending_requests[request_id]["status"]
-            print(f"📌 Found in memory: {status}")
-            return jsonify({"status": status})
-        
-        # ثانياً: البحث في قاعدة البيانات
+        # أولاً: البحث في قاعدة البيانات (المصدر الأساسي والموثوق)
         c.execute("SELECT status FROM approvals WHERE request_id = ?", (request_id,))
         row = c.fetchone()
         
         if row:
             status = row[0]
             print(f"💾 Found in database: {status}")
+            
+            # مزامنة الذاكرة المؤقتة مع قاعدة البيانات
+            if request_id in pending_requests:
+                pending_requests[request_id]["status"] = status
+            
+            return jsonify({"status": status})
+        
+        # ثانياً: البحث في الذاكرة المؤقتة (كحل احتياطي)
+        if request_id in pending_requests:
+            status = pending_requests[request_id]["status"]
+            print(f"📌 Found in memory: {status}")
             return jsonify({"status": status})
         
         print(f"❌ Request not found: {request_id}")
@@ -1234,7 +1239,7 @@ def health():
     return jsonify({
         "status": "ok",
         "bot": "running",
-        "version": "4.5",
+        "version": "4.6",
         "timestamp": int(time.time())
     })
 
