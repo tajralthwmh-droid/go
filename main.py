@@ -263,6 +263,9 @@ pending_requests = {}
 CUSTOM_LOGO = get_setting("custom_logo", "𓆩♛✦𓆪 TOMB OF MAKROTEC 𓆩♛✦𓆪")
 WELCOME_MESSAGE = get_setting("welcome_message", "🔐 طلب فتح التطبيق")
 
+# تخزين الجلسات المؤقتة في الذاكرة
+temp_sessions = {}
+
 def send_main_menu(chat_id):
     """إرسال القائمة الرئيسية بالأزرار"""
     logo = get_setting("custom_logo", CUSTOM_LOGO)
@@ -523,6 +526,33 @@ def show_ban_type_menu(chat_id, device_name, username, message_id=None):
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
+def show_temp_password_type_menu(chat_id, device_name, username, message_id=None):
+    """عرض قائمة أنواع كلمات المرور المؤقتة"""
+    keyboard = [
+        [InlineKeyboardButton("⏰ كلمة مرور بالدقائق", callback_data=f"temp_type_minutes_{device_name}")],
+        [InlineKeyboardButton("🕐 كلمة مرور بالساعات", callback_data=f"temp_type_hours_{device_name}")],
+        [InlineKeyboardButton("📅 كلمة مرور بالأيام", callback_data=f"temp_type_days_{device_name}")],
+        [InlineKeyboardButton("🔙 إلغاء", callback_data="menu_temp_password")]
+    ]
+    
+    text = f"🔑 **إنشاء كلمة مرور مؤقتة للجهاز:** `{device_name}`\n👤 **المستخدم:** {username}\n\nاختر مدة الصلاحية:"
+    
+    if message_id:
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
 def handle_callback(update, context):
     query = update.callback_query
     query.answer()
@@ -538,11 +568,10 @@ def handle_callback(update, context):
         row = c.fetchone()
         username = row[0] if row else "Unknown"
         
-        # عرض قائمة أنواع الحظر
         show_ban_type_menu(chat_id, device_name, username, message_id)
         return
     
-    # ========== اختيار نوع الحظر (دقائق، ساعات، أيام) ==========
+    # ========== اختيار نوع الحظر ==========
     if data.startswith("ban_type_minutes_"):
         device_name = data[17:]
         context.user_data['ban_device'] = device_name
@@ -604,6 +633,67 @@ def handle_callback(update, context):
             parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+        return
+    
+    # ========== كلمات المرور المؤقتة المتطورة ==========
+    if data == "menu_temp_password":
+        devices = get_all_known_devices()
+        if not devices:
+            query.edit_message_text("📭 لا توجد أجهزة معروفة")
+            return
+        
+        keyboard = []
+        for device_name, username in list(devices.items())[:20]:
+            keyboard.append([InlineKeyboardButton(f"📱 {device_name} (👤 {username})", callback_data=f"select_temp_{device_name}")])
+        keyboard.append([InlineKeyboardButton("🔙 العودة", callback_data="back_to_main")])
+        
+        query.edit_message_text(
+            "🔑 **اختر الجهاز لإنشاء كلمة مرور مؤقتة له:**",
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+    
+    if data.startswith("select_temp_"):
+        device_name = data[11:]
+        c.execute("SELECT username FROM approvals WHERE device_name = ? ORDER BY timestamp DESC LIMIT 1", (device_name,))
+        row = c.fetchone()
+        username = row[0] if row else "Unknown"
+        
+        show_temp_password_type_menu(chat_id, device_name, username, message_id)
+        return
+    
+    if data.startswith("temp_type_minutes_"):
+        device_name = data[18:]
+        context.user_data['temp_device'] = device_name
+        context.user_data['temp_type'] = "minutes"
+        query.edit_message_text(
+            text=f"🔑 **كلمة مرور مؤقتة للجهاز:** `{device_name}`\n\n⏰ أدخل عدد الدقائق (1-59):",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        context.user_data['waiting_for_temp_duration'] = True
+        return
+    
+    if data.startswith("temp_type_hours_"):
+        device_name = data[16:]
+        context.user_data['temp_device'] = device_name
+        context.user_data['temp_type'] = "hours"
+        query.edit_message_text(
+            text=f"🔑 **كلمة مرور مؤقتة للجهاز:** `{device_name}`\n\n🕐 أدخل عدد الساعات (1-23):",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        context.user_data['waiting_for_temp_duration'] = True
+        return
+    
+    if data.startswith("temp_type_days_"):
+        device_name = data[15:]
+        context.user_data['temp_device'] = device_name
+        context.user_data['temp_type'] = "days"
+        query.edit_message_text(
+            text=f"🔑 **كلمة مرور مؤقتة للجهاز:** `{device_name}`\n\n📅 أدخل عدد الأيام (1-365):",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        context.user_data['waiting_for_temp_duration'] = True
         return
     
     # ========== القوائم الرئيسية ==========
@@ -861,57 +951,6 @@ def handle_callback(update, context):
         context.user_data['waiting_for_new_password'] = True
         return
     
-    elif data == "menu_temp_password":
-        keyboard = [
-            [InlineKeyboardButton("🔑 إنشاء كلمة مرور مؤقتة", callback_data="create_temp_password")],
-            [InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]
-        ]
-        query.edit_message_text(
-            "🔑 **كلمات المرور المؤقتة**\n\nيمكنك إنشاء كلمة مرور مؤقتة لجهاز معين.\n\nسيتم إنشاء كلمة مرور صالحة لمدة 24 ساعة.",
-            parse_mode=telegram.ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        return
-    
-    elif data == "create_temp_password":
-        devices = get_all_known_devices()
-        if not devices:
-            query.edit_message_text("📭 لا توجد أجهزة معروفة")
-            return
-        
-        keyboard = []
-        for device_name, username in list(devices.items())[:20]:
-            keyboard.append([InlineKeyboardButton(f"📱 {device_name} (👤 {username})", callback_data=f"temp_pass_{device_name}")])
-        keyboard.append([InlineKeyboardButton("🔙 العودة", callback_data="menu_temp_password")])
-        
-        query.edit_message_text(
-            "🔑 **اختر الجهاز لإنشاء كلمة مرور مؤقتة له:**",
-            parse_mode=telegram.ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        return
-    
-    elif data.startswith("temp_pass_"):
-        device_name = data[9:]
-        
-        temp_password = hashlib.md5(f"{device_name}{time.time()}".encode()).hexdigest()[:8]
-        temp_hash = hashlib.sha256(temp_password.encode()).hexdigest()
-        now = int(time.time())
-        expires_at = now + 86400
-        
-        c.execute("""INSERT INTO temp_passwords (password_hash, device_name, created_at, expires_at) 
-                     VALUES (?, ?, ?, ?)""",
-                  (temp_hash, device_name, now, expires_at))
-        conn.commit()
-        
-        keyboard = [[InlineKeyboardButton("🔙 العودة", callback_data="menu_temp_password")]]
-        query.edit_message_text(
-            f"✅ **تم إنشاء كلمة مرور مؤقتة للجهاز:** `{device_name}`\n\n🔑 **كلمة المرور:** `{temp_password}`\n⏰ **صالحة لمدة:** 24 ساعة\n\n📝 يمكنك مشاركة هذه الكلمة مع المستخدم",
-            parse_mode=telegram.ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        return
-    
     elif data == "back_to_main":
         send_main_menu(chat_id)
         try:
@@ -1079,6 +1118,92 @@ def handle_message(update, context):
         send_main_menu(chat_id)
         return
     
+    # معالجة إدخال مدة كلمة المرور المؤقتة
+    if context.user_data.get('waiting_for_temp_duration'):
+        try:
+            duration = int(text)
+            temp_type = context.user_data.get('temp_type')
+            device_name = context.user_data.get('temp_device')
+            
+            # التحقق من صحة المدة
+            if temp_type == "minutes" and (duration < 1 or duration > 59):
+                bot.send_message(chat_id=chat_id, text="❌ عدد الدقائق يجب أن يكون بين 1 و 59")
+                context.user_data.pop('waiting_for_temp_duration', None)
+                context.user_data.pop('temp_device', None)
+                context.user_data.pop('temp_type', None)
+                send_main_menu(chat_id)
+                return
+            elif temp_type == "hours" and (duration < 1 or duration > 23):
+                bot.send_message(chat_id=chat_id, text="❌ عدد الساعات يجب أن يكون بين 1 و 23")
+                context.user_data.pop('waiting_for_temp_duration', None)
+                context.user_data.pop('temp_device', None)
+                context.user_data.pop('temp_type', None)
+                send_main_menu(chat_id)
+                return
+            elif temp_type == "days" and (duration < 1 or duration > 365):
+                bot.send_message(chat_id=chat_id, text="❌ عدد الأيام يجب أن يكون بين 1 و 365")
+                context.user_data.pop('waiting_for_temp_duration', None)
+                context.user_data.pop('temp_device', None)
+                context.user_data.pop('temp_type', None)
+                send_main_menu(chat_id)
+                return
+            
+            c.execute("SELECT username FROM approvals WHERE device_name = ? ORDER BY timestamp DESC LIMIT 1", (device_name,))
+            row = c.fetchone()
+            username = row[0] if row else "Unknown"
+            
+            # حساب وقت الانتهاء
+            now = int(time.time())
+            if temp_type == "minutes":
+                expires_at = now + (duration * 60)
+                time_text = f"{duration} دقيقة"
+            elif temp_type == "hours":
+                expires_at = now + (duration * 3600)
+                time_text = f"{duration} ساعة"
+            elif temp_type == "days":
+                expires_at = now + (duration * 86400)
+                time_text = f"{duration} يوم"
+            else:
+                expires_at = now + 86400  // افتراضي 24 ساعة
+                time_text = "24 ساعة"
+            
+            # إنشاء كلمة مرور مؤقتة
+            temp_password = hashlib.md5(f"{device_name}{time.time()}{duration}".encode()).hexdigest()[:12]
+            temp_hash = hashlib.sha256(temp_password.encode()).hexdigest()
+            
+            c.execute("""INSERT INTO temp_passwords (password_hash, device_name, created_at, expires_at) 
+                         VALUES (?, ?, ?, ?)""",
+                      (temp_hash, device_name, now, expires_at))
+            conn.commit()
+            
+            # إنشاء جلسة مؤقتة
+            session_id = hashlib.md5(f"{device_name}{temp_password}".encode()).hexdigest()[:16]
+            temp_sessions[session_id] = {
+                "device_name": device_name,
+                "expires_at": expires_at,
+                "created_at": now,
+                "username": username
+            }
+            
+            bot.send_message(
+                chat_id=chat_id,
+                text=f"✅ **تم إنشاء كلمة مرور مؤقتة للجهاز:** `{device_name}`\n\n"
+                     f"🔑 **كلمة المرور:** `{temp_password}`\n"
+                     f"⏰ **مدة الصلاحية:** {time_text}\n"
+                     f"📅 **تنتهي في:** {datetime.fromtimestamp(expires_at).strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                     f"📝 يمكنك مشاركة هذه الكلمة مع المستخدم",
+                parse_mode=telegram.ParseMode.MARKDOWN
+            )
+            
+        except ValueError:
+            bot.send_message(chat_id=chat_id, text="❌ الرجاء إدخال رقم صحيح")
+        
+        context.user_data.pop('waiting_for_temp_duration', None)
+        context.user_data.pop('temp_device', None)
+        context.user_data.pop('temp_type', None)
+        send_main_menu(chat_id)
+        return
+    
     if context.user_data.get('waiting_for_logo'):
         new_logo = text.strip()
         set_setting("custom_logo", new_logo)
@@ -1135,6 +1260,33 @@ bot_thread = threading.Thread(target=run_bot)
 bot_thread.daemon = True
 bot_thread.start()
 
+# ===================== تنظيف الجلسات المنتهية =====================
+def cleanup_temp_sessions():
+    """تنظيف الجلسات المنتهية"""
+    while True:
+        try:
+            now = int(time.time())
+            # تنظيف الجلسات في الذاكرة
+            expired = [sid for sid, data in temp_sessions.items() if data["expires_at"] <= now]
+            for sid in expired:
+                del temp_sessions[sid]
+            
+            # تنظيف كلمات المرور المؤقتة في قاعدة البيانات
+            c.execute("DELETE FROM temp_passwords WHERE expires_at <= ? AND used = 0", (now,))
+            conn.commit()
+            
+            # تنظيف الحظر المؤقت المنتهي
+            c.execute("DELETE FROM banned_devices WHERE ban_type != 'permanent' AND banned_until <= ?", (now,))
+            conn.commit()
+            
+        except Exception as e:
+            print(f"Cleanup error: {e}")
+        
+        time.sleep(3600)  // كل ساعة
+
+cleanup_thread = threading.Thread(target=cleanup_temp_sessions, daemon=True)
+cleanup_thread.start()
+
 # ===================== API للتطبيق =====================
 @app.route('/', methods=['GET'])
 def home():
@@ -1142,8 +1294,8 @@ def home():
     return jsonify({
         "status": "online",
         "service": "Tomb Bot Protection System",
-        "version": "5.0",
-        "message": "API is working! (Advanced ban system)",
+        "version": "5.1",
+        "message": "API is working! (Advanced temp passwords with custom duration)",
         "endpoints": [
             "/request_access - POST",
             "/check_status/<request_id> - GET", 
@@ -1154,6 +1306,8 @@ def home():
             "/get_stats - GET",
             "/check_device_status - POST",
             "/verify_temp_password - POST",
+            "/create_temp_session - POST",
+            "/check_session/<session_id> - GET",
             "/notify_app_opened - POST",
             "/health - GET"
         ]
@@ -1197,7 +1351,22 @@ def request_access():
             if row:
                 c.execute("UPDATE temp_passwords SET used = 1 WHERE password_hash = ?", (temp_hash,))
                 conn.commit()
-                return jsonify({"status": "approved", "message": "تم الدخول عبر كلمة مرور مؤقتة"})
+                
+                # إنشاء جلسة مؤقتة للتطبيق
+                session_id = hashlib.md5(f"{device_name}{temp_password}".encode()).hexdigest()[:16]
+                temp_sessions[session_id] = {
+                    "device_name": device_name,
+                    "expires_at": row[1],
+                    "created_at": int(time.time()),
+                    "username": username
+                }
+                
+                return jsonify({
+                    "status": "approved", 
+                    "message": "تم الدخول عبر كلمة مرور مؤقتة",
+                    "session_id": session_id,
+                    "expires_at": row[1]
+                })
         
         send_approval_request(
             request_id=request_id,
@@ -1244,6 +1413,47 @@ def check_status(request_id):
         print(f"Error in check_status: {e}")
         return jsonify({"status": "pending"}), 500
 
+@app.route('/create_temp_session', methods=['POST'])
+def create_temp_session():
+    """إنشاء جلسة مؤقتة للتطبيق"""
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        device_name = data.get('device_name')
+        duration_minutes = data.get('duration', 1440)  // افتراضي 24 ساعة
+        
+        expires_at = int(time.time()) + (duration_minutes * 60)
+        temp_sessions[session_id] = {
+            "device_name": device_name,
+            "expires_at": expires_at,
+            "created_at": int(time.time())
+        }
+        
+        return jsonify({
+            "status": "created",
+            "expires_at": expires_at,
+            "expires_in": duration_minutes * 60
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/check_session/<session_id>', methods=['GET'])
+def check_session(session_id):
+    """التحقق من صحة الجلسة المؤقتة"""
+    try:
+        session = temp_sessions.get(session_id)
+        if session and session["expires_at"] > int(time.time()):
+            remaining = session["expires_at"] - int(time.time())
+            return jsonify({
+                "valid": True,
+                "expires_at": session["expires_at"],
+                "remaining": remaining,
+                "device_name": session.get("device_name", "")
+            })
+        return jsonify({"valid": False})
+    except Exception as e:
+        return jsonify({"valid": False}), 500
+
 @app.route('/verify_password', methods=['POST'])
 def verify_password():
     """التحقق من كلمة المرور"""
@@ -1275,7 +1485,7 @@ def verify_temp_password():
         if row:
             c.execute("UPDATE temp_passwords SET used = 1 WHERE id = ?", (row[0],))
             conn.commit()
-            return jsonify({"valid": True})
+            return jsonify({"valid": True, "expires_at": row[1]})
         
         return jsonify({"valid": False})
     
@@ -1375,10 +1585,8 @@ def notify_app_opened():
         device_info = data.get('device_info', 'Unknown')
         ip_address = data.get('ip_address', 'Unknown')
         
-        # إضافة الجهاز إلى قائمة الأجهزة النشطة
         add_active_device(device_name, "SYSTEM", device_info)
         
-        # إرسال إشعار للمطور
         message = f"""
 📱 *جهاز فتح التطبيق* 📱
 
@@ -1391,7 +1599,6 @@ def notify_app_opened():
 """
         bot.send_message(chat_id=ADMIN_CHAT_ID, text=message, parse_mode=telegram.ParseMode.MARKDOWN)
         
-        # تسجيل في قاعدة البيانات
         c.execute("""INSERT INTO access_logs (username, device_name, ip_address, status, timestamp) 
                      VALUES (?, ?, ?, ?, ?)""",
                   ("SYSTEM", device_name, ip_address, "app_opened", int(time.time())))
@@ -1410,7 +1617,7 @@ def health():
     return jsonify({
         "status": "ok",
         "bot": "running",
-        "version": "5.0",
+        "version": "5.1",
         "timestamp": int(time.time())
     })
 
