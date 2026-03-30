@@ -88,6 +88,15 @@ c.execute('''CREATE TABLE IF NOT EXISTS active_sessions
               session_type TEXT,
               created_at INTEGER)''')
 
+# جدول الإشعارات
+c.execute('''CREATE TABLE IF NOT EXISTS notifications
+             (id INTEGER PRIMARY KEY AUTOINCREMENT,
+              device_name TEXT,
+              title TEXT,
+              message TEXT,
+              created_at INTEGER,
+              is_read INTEGER DEFAULT 0)''')
+
 conn.commit()
 
 # ===================== دوال الإعدادات =====================
@@ -260,6 +269,7 @@ pending_requests = {}
 
 CUSTOM_LOGO = get_setting("custom_logo", "𓆩♛✦𓆪 TOMB OF MAKROTEC 𓆩♛✦𓆪")
 WELCOME_MESSAGE = get_setting("welcome_message", "🔐 طلب فتح التطبيق")
+WELCOME_TEMPLATE = get_setting("welcome_message_template", "مرحباً بك يا & في تطبيق tomb of Makrotik")
 
 def send_main_menu(chat_id):
     logo = get_setting("custom_logo", CUSTOM_LOGO)
@@ -292,7 +302,11 @@ def send_main_menu(chat_id):
         ],
         [
             InlineKeyboardButton("🚪 تسجيل خروج جهاز", callback_data="menu_force_logout"),
-            InlineKeyboardButton("🗑️ مسح الطلبات", callback_data="menu_clear_requests")
+            InlineKeyboardButton("🗑️ مسح الطلبات", callback_data="menu_clear_requests_options")
+        ],
+        [
+            InlineKeyboardButton("📢 إرسال إشعار", callback_data="menu_send_notification"),
+            InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="back_to_main")
         ]
     ]
     
@@ -495,7 +509,6 @@ def show_device_list_for_unban(chat_id, message_id=None):
         )
 
 def show_device_list_for_logout(chat_id, message_id=None):
-    """عرض قائمة الأجهزة النشطة لتسجيل الخروج"""
     devices = get_active_devices()
     
     if not devices:
@@ -566,6 +579,160 @@ def show_ban_type_menu(chat_id, device_name, username, message_id=None):
             parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+
+def show_clear_requests_menu(chat_id, message_id=None):
+    keyboard = [
+        [InlineKeyboardButton("✅ مسح الطلبات المقبولة", callback_data="clear_approved")],
+        [InlineKeyboardButton("❌ مسح الطلبات المرفوضة", callback_data="clear_denied")],
+        [InlineKeyboardButton("⏳ مسح الطلبات المعلقة", callback_data="clear_pending")],
+        [InlineKeyboardButton("🗑️ مسح الكل", callback_data="clear_all_requests")],
+        [InlineKeyboardButton("🔙 العودة", callback_data="back_to_main")]
+    ]
+    
+    text = "🗑️ **مسح الطلبات**\n\nاختر نوع الطلبات التي تريد مسحها:"
+    
+    if message_id:
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+def show_temp_password_duration_menu(chat_id, device_name, username, message_id=None):
+    keyboard = [
+        [InlineKeyboardButton("⏰ دقائق", callback_data=f"temp_duration_minutes_{device_name}")],
+        [InlineKeyboardButton("🕐 ساعات", callback_data=f"temp_duration_hours_{device_name}")],
+        [InlineKeyboardButton("📅 أيام", callback_data=f"temp_duration_days_{device_name}")],
+        [InlineKeyboardButton("🔙 إلغاء", callback_data="menu_temp_password")]
+    ]
+    
+    text = f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n👤 **المستخدم:** {username}\n\nاختر وحدة المدة:"
+    
+    if message_id:
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+def show_send_notification_menu(chat_id, message_id=None):
+    keyboard = [
+        [InlineKeyboardButton("📱 إشعار لجهاز محدد", callback_data="notify_single_device")],
+        [InlineKeyboardButton("👥 إشعار للجميع", callback_data="notify_all_devices")],
+        [InlineKeyboardButton("🔙 العودة للإعدادات", callback_data="menu_settings")]
+    ]
+    
+    text = "📢 **إرسال إشعارات**\n\nيمكنك إرسال إشعار لجهاز محدد أو لجميع الأجهزة النشطة.\n\nسيظهر الإشعار في لوحة الإشعارات وفي شاشة التطبيق."
+    
+    if message_id:
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+def show_devices_for_notification(chat_id, message_id=None):
+    devices = get_active_devices()
+    
+    if not devices:
+        text = "📭 لا توجد أجهزة نشطة"
+        keyboard = [[InlineKeyboardButton("🔙 العودة", callback_data="menu_send_notification")]]
+        if message_id:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        return
+    
+    keyboard = []
+    for device_name, username, device_info, last_active, first_active, total_requests in devices:
+        last_active_str = datetime.fromtimestamp(last_active).strftime('%H:%M')
+        keyboard.append([InlineKeyboardButton(f"📱 {device_name} (👤 {username})", callback_data=f"notify_device_{device_name}")])
+    
+    keyboard.append([InlineKeyboardButton("🔙 العودة", callback_data="menu_send_notification")])
+    text = "📢 **اختر الجهاز لإرسال إشعار له:**\n\n"
+    
+    if message_id:
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+def show_welcome_template_menu(chat_id, message_id=None):
+    current_template = get_setting("welcome_message_template", "مرحباً بك يا & في تطبيق tomb of Makrotik")
+    
+    text = f"""💬 **تغيير رسالة الترحيب**
+
+📝 **الرسالة الحالية:**
+`{current_template}`
+
+💡 **ملاحظة:** استخدم الرمز `&` لوضع اسم المستخدم تلقائياً.
+
+**أمثلة:**
+• `مرحباً بك يا & في تطبيق TOMB`
+• `حبيبي يا & في tomb of Makrotik`
+
+📤 **أرسل رسالة الترحيب الجديدة الآن:**"""
+    
+    if message_id:
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+    else:
+        bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+    context.user_data['waiting_for_welcome_template'] = True
 
 def handle_callback(update, context):
     query = update.callback_query
@@ -674,6 +841,144 @@ def handle_callback(update, context):
             parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+        return
+    
+    # ========== مسح الطلبات ==========
+    if data == "menu_clear_requests_options":
+        show_clear_requests_menu(chat_id, message_id)
+        return
+    
+    if data == "clear_approved":
+        c.execute("DELETE FROM approvals WHERE status='approved'")
+        conn.commit()
+        query.edit_message_text("✅ تم مسح جميع الطلبات المقبولة")
+        send_main_menu(chat_id)
+        return
+    
+    if data == "clear_denied":
+        c.execute("DELETE FROM approvals WHERE status='denied'")
+        conn.commit()
+        query.edit_message_text("✅ تم مسح جميع الطلبات المرفوضة")
+        send_main_menu(chat_id)
+        return
+    
+    if data == "clear_pending":
+        c.execute("DELETE FROM approvals WHERE status='pending'")
+        conn.commit()
+        query.edit_message_text("✅ تم مسح جميع الطلبات المعلقة")
+        send_main_menu(chat_id)
+        return
+    
+    if data == "clear_all_requests":
+        c.execute("DELETE FROM approvals")
+        conn.commit()
+        query.edit_message_text("✅ تم مسح جميع الطلبات")
+        send_main_menu(chat_id)
+        return
+    
+    # ========== كلمة المرور المؤقتة ==========
+    if data == "menu_temp_password":
+        keyboard = [
+            [InlineKeyboardButton("🔑 إنشاء كلمة مرور مؤقتة", callback_data="create_temp_password")],
+            [InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]
+        ]
+        query.edit_message_text(
+            "🔑 **كلمات المرور المؤقتة**\n\nيمكنك إنشاء كلمة مرور مؤقتة لجهاز معين.\n\nسيتم إنشاء كلمة مرور صالحة للمدة التي تختارها.\n⚠️ **ملاحظة:** بعد انتهاء الصلاحية سيتم إرجاع المستخدم لشاشة تسجيل الدخول.",
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+    
+    if data == "create_temp_password":
+        devices = get_all_known_devices()
+        if not devices:
+            query.edit_message_text("📭 لا توجد أجهزة معروفة")
+            return
+        
+        keyboard = []
+        for device_name, username in list(devices.items())[:20]:
+            if not is_device_banned(device_name):
+                keyboard.append([InlineKeyboardButton(f"📱 {device_name} (👤 {username})", callback_data=f"temp_select_{device_name}")])
+        keyboard.append([InlineKeyboardButton("🔙 العودة", callback_data="menu_temp_password")])
+        
+        query.edit_message_text(
+            "🔑 **اختر الجهاز لإنشاء كلمة مرور مؤقتة له:**\n\nبعد الاختيار ستختار مدة الصلاحية (دقائق/ساعات/أيام)",
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+    
+    if data.startswith("temp_select_"):
+        device_name = data[12:]
+        c.execute("SELECT username FROM approvals WHERE device_name = ? ORDER BY timestamp DESC LIMIT 1", (device_name,))
+        row = c.fetchone()
+        username = row[0] if row else "Unknown"
+        show_temp_password_duration_menu(chat_id, device_name, username, message_id)
+        return
+    
+    if data.startswith("temp_duration_minutes_"):
+        device_name = data[21:]
+        context.user_data['temp_device'] = device_name
+        context.user_data['temp_unit'] = "minutes"
+        query.edit_message_text(
+            text=f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n\n⏰ أدخل عدد الدقائق (1-59):",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        context.user_data['waiting_for_temp_duration'] = True
+        return
+    
+    if data.startswith("temp_duration_hours_"):
+        device_name = data[19:]
+        context.user_data['temp_device'] = device_name
+        context.user_data['temp_unit'] = "hours"
+        query.edit_message_text(
+            text=f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n\n🕐 أدخل عدد الساعات (1-23):",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        context.user_data['waiting_for_temp_duration'] = True
+        return
+    
+    if data.startswith("temp_duration_days_"):
+        device_name = data[18:]
+        context.user_data['temp_device'] = device_name
+        context.user_data['temp_unit'] = "days"
+        query.edit_message_text(
+            text=f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n\n📅 أدخل عدد الأيام (1-365):",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        context.user_data['waiting_for_temp_duration'] = True
+        return
+    
+    # ========== إرسال الإشعارات ==========
+    if data == "menu_send_notification":
+        show_send_notification_menu(chat_id, message_id)
+        return
+    
+    if data == "notify_single_device":
+        show_devices_for_notification(chat_id, message_id)
+        return
+    
+    if data == "notify_all_devices":
+        context.user_data['waiting_for_broadcast_title'] = True
+        query.edit_message_text(
+            text="📢 **إرسال إشعار للجميع**\n\nأرسل عنوان الإشعار أولاً:",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        return
+    
+    if data.startswith("notify_device_"):
+        device_name = data[14:]
+        context.user_data['notify_device'] = device_name
+        context.user_data['waiting_for_notification_title'] = True
+        query.edit_message_text(
+            text=f"📢 **إرسال إشعار للجهاز:** `{device_name}`\n\nأرسل عنوان الإشعار أولاً:",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        return
+    
+    # ========== تغيير رسالة الترحيب ==========
+    if data == "change_welcome_template":
+        show_welcome_template_menu(chat_id, message_id)
         return
     
     # ========== القوائم الرئيسية ==========
@@ -870,19 +1175,9 @@ def handle_callback(update, context):
             )
         return
     
-    elif data == "menu_clear_requests":
-        c.execute("DELETE FROM approvals WHERE status != 'pending'")
-        conn.commit()
-        keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
-        query.edit_message_text(
-            text="🗑️ تم مسح جميع الطلبات المنتهية بنجاح",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        return
-    
     elif data == "menu_settings":
         logo = get_setting("custom_logo", CUSTOM_LOGO)
-        welcome = get_setting("welcome_message", WELCOME_MESSAGE)
+        welcome_template = get_setting("welcome_message_template", "مرحباً بك يا & في تطبيق tomb of Makrotik")
         
         text_msg = f"""
 ⚙️ *الإعدادات الحالية*
@@ -890,14 +1185,14 @@ def handle_callback(update, context):
 🏷️ *الشعار:* 
 {logo[:50]}...
 
-📝 *رسالة الترحيب:* 
-{welcome[:50]}...
+💬 *رسالة الترحيب:* 
+{welcome_template[:50]}...
 
 🔑 *كلمة المرور:* {'●' * 8}
 """
         keyboard = [
-            [InlineKeyboardButton("📝 تغيير الشعار", callback_data="change_logo")],
-            [InlineKeyboardButton("💬 تغيير رسالة الترحيب", callback_data="change_welcome")],
+            [InlineKeyboardButton("📢 إرسال إشعارات", callback_data="menu_send_notification")],
+            [InlineKeyboardButton("💬 تغيير رسالة الترحيب", callback_data="change_welcome_template")],
             [InlineKeyboardButton("🔑 تغيير كلمة المرور", callback_data="change_password")],
             [InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]
         ]
@@ -908,86 +1203,12 @@ def handle_callback(update, context):
         )
         return
     
-    elif data == "change_logo":
-        query.edit_message_text(
-            "📝 **تغيير الشعار**\n\nأرسل الشعار الجديد:",
-            parse_mode=telegram.ParseMode.MARKDOWN
-        )
-        context.user_data['waiting_for_logo'] = True
-        return
-    
-    elif data == "change_welcome":
-        query.edit_message_text(
-            "💬 **تغيير رسالة الترحيب**\n\nأرسل الرسالة الجديدة:",
-            parse_mode=telegram.ParseMode.MARKDOWN
-        )
-        context.user_data['waiting_for_welcome'] = True
-        return
-    
     elif data == "change_password":
         query.edit_message_text(
             "🔑 **تغيير كلمة المرور**\n\nأرسل كلمة المرور الجديدة (4 أحرف على الأقل):",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
         context.user_data['waiting_for_new_password'] = True
-        return
-    
-    elif data == "menu_temp_password":
-        keyboard = [
-            [InlineKeyboardButton("🔑 إنشاء كلمة مرور مؤقتة", callback_data="create_temp_password")],
-            [InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]
-        ]
-        query.edit_message_text(
-            "🔑 **كلمات المرور المؤقتة**\n\nيمكنك إنشاء كلمة مرور مؤقتة لجهاز معين.\n\nسيتم إنشاء كلمة مرور صالحة لمدة 24 ساعة.\n⚠️ **ملاحظة:** بعد انتهاء الصلاحية سيتم إرجاع المستخدم لشاشة تسجيل الدخول.",
-            parse_mode=telegram.ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        return
-    
-    elif data == "create_temp_password":
-        devices = get_all_known_devices()
-        if not devices:
-            query.edit_message_text("📭 لا توجد أجهزة معروفة")
-            return
-        
-        keyboard = []
-        for device_name, username in list(devices.items())[:20]:
-            keyboard.append([InlineKeyboardButton(f"📱 {device_name} (👤 {username})", callback_data=f"temp_pass_{device_name}")])
-        keyboard.append([InlineKeyboardButton("🔙 العودة", callback_data="menu_temp_password")])
-        
-        query.edit_message_text(
-            "🔑 **اختر الجهاز لإنشاء كلمة مرور مؤقتة له:**",
-            parse_mode=telegram.ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        return
-    
-    elif data.startswith("temp_pass_"):
-        device_name = data[9:]
-        
-        temp_password = hashlib.md5(f"{device_name}{time.time()}".encode()).hexdigest()[:8]
-        temp_hash = hashlib.sha256(temp_password.encode()).hexdigest()
-        now = int(time.time())
-        expires_at = now + 86400  # 24 ساعة
-        
-        c.execute("""INSERT INTO temp_passwords (password_hash, device_name, created_at, expires_at, used) 
-                     VALUES (?, ?, ?, ?, 0)""",
-                  (temp_hash, device_name, now, expires_at))
-        conn.commit()
-        
-        # إنشاء جلسة مؤقتة
-        c.execute("""INSERT OR REPLACE INTO active_sessions 
-                     (device_name, username, session_expires, session_type, created_at) 
-                     VALUES (?, ?, ?, ?, ?)""",
-                  (device_name, "TEMP_USER", expires_at, "temp", now))
-        conn.commit()
-        
-        keyboard = [[InlineKeyboardButton("🔙 العودة", callback_data="menu_temp_password")]]
-        query.edit_message_text(
-            f"✅ **تم إنشاء كلمة مرور مؤقتة للجهاز:** `{device_name}`\n\n🔑 **كلمة المرور:** `{temp_password}`\n⏰ **صالحة لمدة:** 24 ساعة\n\n📝 يمكنك مشاركة هذه الكلمة مع المستخدم\n⚠️ **بعد انتهاء الصلاحية سيتم إرجاع المستخدم لشاشة تسجيل الدخول**",
-            parse_mode=telegram.ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
         return
     
     elif data == "back_to_main":
@@ -1102,6 +1323,7 @@ def handle_message(update, context):
         bot.send_message(chat_id=chat_id, text="⚠️ أنت غير مصرح لك باستخدام هذا البوت")
         return
     
+    # معالجة إدخال مدة الحظر
     if context.user_data.get('waiting_for_ban_duration'):
         try:
             duration = int(text)
@@ -1162,22 +1384,151 @@ def handle_message(update, context):
         send_main_menu(chat_id)
         return
     
-    if context.user_data.get('waiting_for_logo'):
-        new_logo = text.strip()
-        set_setting("custom_logo", new_logo)
-        context.user_data.pop('waiting_for_logo')
-        bot.send_message(chat_id=chat_id, text=f"✅ تم تغيير الشعار بنجاح!")
+    # معالجة مدة كلمة المرور المؤقتة
+    if context.user_data.get('waiting_for_temp_duration'):
+        try:
+            duration = int(text)
+            unit = context.user_data.get('temp_unit')
+            device_name = context.user_data.get('temp_device')
+            
+            if unit == "minutes" and (duration < 1 or duration > 59):
+                bot.send_message(chat_id=chat_id, text="❌ عدد الدقائق يجب أن يكون بين 1 و 59")
+            elif unit == "hours" and (duration < 1 or duration > 23):
+                bot.send_message(chat_id=chat_id, text="❌ عدد الساعات يجب أن يكون بين 1 و 23")
+            elif unit == "days" and (duration < 1 or duration > 365):
+                bot.send_message(chat_id=chat_id, text="❌ عدد الأيام يجب أن يكون بين 1 و 365")
+            else:
+                now = int(time.time())
+                if unit == "minutes":
+                    expires_at = now + (duration * 60)
+                    time_text = f"{duration} دقيقة"
+                elif unit == "hours":
+                    expires_at = now + (duration * 3600)
+                    time_text = f"{duration} ساعة"
+                else:
+                    expires_at = now + (duration * 86400)
+                    time_text = f"{duration} يوم"
+                
+                temp_password = hashlib.md5(f"{device_name}{time.time()}".encode()).hexdigest()[:8]
+                temp_hash = hashlib.sha256(temp_password.encode()).hexdigest()
+                
+                c.execute("""INSERT INTO temp_passwords (password_hash, device_name, created_at, expires_at, used) 
+                             VALUES (?, ?, ?, ?, 0)""",
+                          (temp_hash, device_name, now, expires_at))
+                conn.commit()
+                
+                c.execute("""INSERT OR REPLACE INTO active_sessions 
+                             (device_name, username, session_expires, session_type, created_at) 
+                             VALUES (?, ?, ?, ?, ?)""",
+                          (device_name, "TEMP_USER", expires_at, "temp", now))
+                conn.commit()
+                
+                bot.send_message(
+                    chat_id=chat_id,
+                    text=f"✅ **تم إنشاء كلمة مرور مؤقتة!**\n\n📱 الجهاز: `{device_name}`\n🔑 كلمة المرور: `{temp_password}`\n⏰ المدة: {time_text}\n\n⚠️ بعد انتهاء المدة سيتم إرجاع المستخدم لشاشة تسجيل الدخول",
+                    parse_mode=telegram.ParseMode.MARKDOWN
+                )
+        except ValueError:
+            bot.send_message(chat_id=chat_id, text="❌ الرجاء إدخال رقم صحيح")
+        
+        context.user_data.pop('waiting_for_temp_duration', None)
+        context.user_data.pop('temp_device', None)
+        context.user_data.pop('temp_unit', None)
         send_main_menu(chat_id)
         return
     
-    if context.user_data.get('waiting_for_welcome'):
-        new_welcome = text.strip()
-        set_setting("welcome_message", new_welcome)
-        context.user_data.pop('waiting_for_welcome')
-        bot.send_message(chat_id=chat_id, text=f"✅ تم تغيير رسالة الترحيب بنجاح!")
+    # معالجة تغيير رسالة الترحيب
+    if context.user_data.get('waiting_for_welcome_template'):
+        new_template = text.strip()
+        if '&' in new_template:
+            set_setting("welcome_message_template", new_template)
+            bot.send_message(
+                chat_id=chat_id,
+                text=f"✅ **تم تغيير رسالة الترحيب بنجاح!**\n\nالرسالة الجديدة: `{new_template}`\n\n(سيتم استبدال & باسم المستخدم)",
+                parse_mode=telegram.ParseMode.MARKDOWN
+            )
+        else:
+            bot.send_message(
+                chat_id=chat_id,
+                text="❌ **الرسالة يجب أن تحتوي على الرمز `&`**\n\nمثال: `مرحباً بك يا & في تطبيق TOMB`",
+                parse_mode=telegram.ParseMode.MARKDOWN
+            )
+        context.user_data.pop('waiting_for_welcome_template')
         send_main_menu(chat_id)
         return
     
+    # معالجة إرسال إشعار لجهاز محدد
+    if context.user_data.get('waiting_for_notification_title'):
+        context.user_data['notification_title'] = text
+        context.user_data['waiting_for_notification_title'] = False
+        context.user_data['waiting_for_notification_message'] = True
+        bot.send_message(
+            chat_id=chat_id,
+            text="📝 **أرسل نص الإشعار الآن:**",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        return
+    
+    if context.user_data.get('waiting_for_notification_message'):
+        title = context.user_data.get('notification_title', 'تطبيق TOMB')
+        message = text
+        device_name = context.user_data.get('notify_device')
+        
+        c.execute("""INSERT INTO notifications (device_name, title, message, created_at, is_read)
+                     VALUES (?, ?, ?, ?, 0)""",
+                  (device_name, title, message, int(time.time())))
+        conn.commit()
+        
+        bot.send_message(
+            chat_id=chat_id,
+            text=f"✅ **تم إرسال الإشعار بنجاح!**\n\n📱 الجهاز: `{device_name}`\n📌 العنوان: {title}\n💬 الرسالة: {message}",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        
+        context.user_data.pop('waiting_for_notification_title', None)
+        context.user_data.pop('waiting_for_notification_message', None)
+        context.user_data.pop('notification_title', None)
+        context.user_data.pop('notify_device', None)
+        send_main_menu(chat_id)
+        return
+    
+    # معالجة إرسال إشعار للجميع
+    if context.user_data.get('waiting_for_broadcast_title'):
+        context.user_data['broadcast_title'] = text
+        context.user_data['waiting_for_broadcast_title'] = False
+        context.user_data['waiting_for_broadcast_message'] = True
+        bot.send_message(
+            chat_id=chat_id,
+            text="📝 **أرسل نص الإشعار للجميع الآن:**",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        return
+    
+    if context.user_data.get('waiting_for_broadcast_message'):
+        title = context.user_data.get('broadcast_title', 'تطبيق TOMB')
+        message = text
+        
+        devices = get_active_devices()
+        for device in devices:
+            device_name = device[0]
+            c.execute("""INSERT INTO notifications (device_name, title, message, created_at, is_read)
+                         VALUES (?, ?, ?, ?, 0)""",
+                      (device_name, title, message, int(time.time())))
+        conn.commit()
+        
+        bot.send_message(
+            chat_id=chat_id,
+            text=f"✅ **تم إرسال الإشعار للجميع بنجاح!**\n\n📌 العنوان: {title}\n💬 الرسالة: {message}\n📱 عدد الأجهزة: {len(devices)}",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        
+        context.user_data.pop('waiting_for_broadcast_title', None)
+        context.user_data.pop('waiting_for_broadcast_message', None)
+        context.user_data.pop('broadcast_title', None)
+        send_main_menu(chat_id)
+        return
+    
+    # معالجة تغيير كلمة المرور
     if context.user_data.get('waiting_for_new_password'):
         new_password = text.strip()
         if len(new_password) >= 4:
@@ -1240,6 +1591,8 @@ def home():
             "/check_session - POST",
             "/force_logout - POST",
             "/refresh_device_status - POST",
+            "/get_welcome_template - GET",
+            "/get_notifications/<device_name> - GET",
             "/health - GET"
         ]
     })
@@ -1261,6 +1614,7 @@ def request_access():
         
         print(f"📱 New request from {device_name} - ID: {request_id}")
         
+        # التحقق من الحظر
         if is_device_banned(device_name):
             ban_info = get_device_ban_info(device_name)
             return jsonify({
@@ -1272,6 +1626,7 @@ def request_access():
                 "remaining_text": ban_info.get('remaining_text', '')
             })
         
+        # التحقق من كلمة المرور المؤقتة
         temp_password = data.get('temp_password')
         if temp_password:
             temp_hash = hashlib.sha256(temp_password.encode()).hexdigest()
@@ -1296,7 +1651,23 @@ def request_access():
                     "session_type": "temp"
                 })
             else:
-                return jsonify({"status": "temp_expired", "message": "كلمة المرور المؤقتة منتهية الصلاحية"})
+                # التحقق من كلمة المرور العادية
+                if check_password(temp_password):
+                    # إنشاء جلسة عادية
+                    session_expires = int(time.time()) + 86400
+                    c.execute("""INSERT OR REPLACE INTO active_sessions 
+                                 (device_name, username, session_expires, session_type, created_at) 
+                                 VALUES (?, ?, ?, ?, ?)""",
+                              (device_name, username, session_expires, "normal", int(time.time())))
+                    conn.commit()
+                    return jsonify({
+                        "status": "approved",
+                        "message": "تم الدخول عبر كلمة المرور الرئيسية",
+                        "expires_at": session_expires,
+                        "session_type": "normal"
+                    })
+                else:
+                    return jsonify({"status": "temp_expired", "message": "كلمة المرور غير صحيحة"})
         
         send_approval_request(
             request_id=request_id,
@@ -1423,8 +1794,17 @@ def get_settings():
     try:
         return jsonify({
             "logo": get_setting("custom_logo", CUSTOM_LOGO),
-            "welcome_message": get_setting("welcome_message", WELCOME_MESSAGE)
+            "welcome_message": get_setting("welcome_message", WELCOME_MESSAGE),
+            "welcome_template": get_setting("welcome_message_template", "مرحباً بك يا & في تطبيق tomb of Makrotik")
         })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/get_welcome_template', methods=['GET'])
+def get_welcome_template():
+    try:
+        template = get_setting("welcome_message_template", "مرحباً بك يا & في تطبيق tomb of Makrotik")
+        return jsonify({"welcome_template": template})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1494,7 +1874,6 @@ def notify_app_opened():
 
 @app.route('/check_session', methods=['POST'])
 def check_session():
-    """التحقق من صحة الجلسة"""
     try:
         data = request.json
         device_name = data.get('device_name', '')
@@ -1515,12 +1894,19 @@ def check_session():
             session_expires, session_type = row
             if session_expires > int(time.time()):
                 remaining_seconds = session_expires - int(time.time())
-                remaining_hours = remaining_seconds // 3600
+                if session_type == "temp":
+                    if remaining_seconds < 3600:
+                        remaining_text = f"{remaining_seconds // 60} دقيقة"
+                    else:
+                        remaining_text = f"{remaining_seconds // 3600} ساعة"
+                else:
+                    remaining_text = f"{remaining_seconds // 3600} ساعة"
                 return jsonify({
                     "valid": True,
                     "session_type": session_type,
                     "expires_at": session_expires,
-                    "remaining_hours": remaining_hours
+                    "remaining_hours": remaining_seconds // 3600,
+                    "remaining_text": remaining_text
                 })
             else:
                 c.execute("DELETE FROM active_sessions WHERE device_name = ?", (device_name,))
@@ -1535,7 +1921,6 @@ def check_session():
 
 @app.route('/force_logout', methods=['POST'])
 def force_logout():
-    """إجبار جهاز على تسجيل الخروج"""
     try:
         data = request.json
         device_name = data.get('device_name', '')
@@ -1549,7 +1934,6 @@ def force_logout():
 
 @app.route('/refresh_device_status', methods=['POST'])
 def refresh_device_status():
-    """تحديث حالة الجهاز - إعادة التحقق من الحظر والجلسة"""
     try:
         data = request.json
         device_name = data.get('device_name', '')
@@ -1576,6 +1960,37 @@ def refresh_device_status():
         
         return jsonify({"status": "no_session"})
     
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/get_notifications/<device_name>', methods=['GET'])
+def get_notifications(device_name):
+    try:
+        c.execute("""SELECT id, title, message, created_at, is_read 
+                     FROM notifications WHERE device_name = ? OR device_name = 'all'
+                     ORDER BY created_at DESC LIMIT 50""", (device_name,))
+        rows = c.fetchall()
+        
+        notifications = []
+        for row in rows:
+            notifications.append({
+                "id": row[0],
+                "title": row[1],
+                "message": row[2],
+                "created_at": row[3],
+                "is_read": row[4]
+            })
+        
+        return jsonify({"notifications": notifications})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/mark_notification_read/<int:notification_id>', methods=['POST'])
+def mark_notification_read(notification_id):
+    try:
+        c.execute("UPDATE notifications SET is_read = 1 WHERE id = ?", (notification_id,))
+        conn.commit()
+        return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
