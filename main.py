@@ -1164,7 +1164,7 @@ def handle_message(update, context):
                 expires_at = now + (duration * 86400)
                 time_text = f"{duration} يوم"
             else:
-                expires_at = now + 86400  // افتراضي 24 ساعة
+                expires_at = now + 86400  # افتراضي 24 ساعة
                 time_text = "24 ساعة"
             
             # إنشاء كلمة مرور مؤقتة
@@ -1282,7 +1282,7 @@ def cleanup_temp_sessions():
         except Exception as e:
             print(f"Cleanup error: {e}")
         
-        time.sleep(3600)  // كل ساعة
+        time.sleep(3600)  # كل ساعة
 
 cleanup_thread = threading.Thread(target=cleanup_temp_sessions, daemon=True)
 cleanup_thread.start()
@@ -1420,7 +1420,7 @@ def create_temp_session():
         data = request.json
         session_id = data.get('session_id')
         device_name = data.get('device_name')
-        duration_minutes = data.get('duration', 1440)  // افتراضي 24 ساعة
+        duration_minutes = data.get('duration', 1440)  # افتراضي 24 ساعة
         
         expires_at = int(time.time()) + (duration_minutes * 60)
         temp_sessions[session_id] = {
