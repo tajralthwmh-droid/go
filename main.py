@@ -80,13 +80,21 @@ c.execute('''CREATE TABLE IF NOT EXISTS temp_passwords
               expires_at INTEGER,
               used INTEGER DEFAULT 0)''')
 
-# جدول الجلسات النشطة
+# جدول الجلسات النشطة - للجلسات المؤقتة فقط (الأساسية لا تحتاج جلسة)
 c.execute('''CREATE TABLE IF NOT EXISTS active_sessions
              (device_name TEXT PRIMARY KEY,
               username TEXT,
               session_expires INTEGER,
               session_type TEXT,
               created_at INTEGER)''')
+
+# جدول الأجهزة المعتمدة (للتخزين الدائم للجلسات الأساسية)
+c.execute('''CREATE TABLE IF NOT EXISTS approved_devices
+             (device_name TEXT PRIMARY KEY,
+              username TEXT,
+              approved_at INTEGER,
+              last_login INTEGER,
+              approved_by TEXT)''')
 
 # جدول الإشعارات
 c.execute('''CREATE TABLE IF NOT EXISTS notifications
@@ -171,6 +179,11 @@ def get_all_known_devices():
         device_name, username = row
         if device_name not in devices:
             devices[device_name] = username
+    c.execute("SELECT device_name, username FROM approved_devices")
+    for row in c.fetchall():
+        device_name, username = row
+        if device_name not in devices:
+            devices[device_name] = username
     return devices
 
 def ban_device(device_name, username, ban_type="permanent", duration=0, reason="محظور من قبل المطور"):
@@ -193,6 +206,7 @@ def ban_device(device_name, username, ban_type="permanent", duration=0, reason="
     conn.commit()
     remove_active_device(device_name)
     c.execute("DELETE FROM active_sessions WHERE device_name = ?", (device_name,))
+    c.execute("DELETE FROM approved_devices WHERE device_name = ?", (device_name,))
     conn.commit()
 
 def unban_device(device_name):
@@ -249,6 +263,7 @@ def get_access_stats():
     denied = c.execute("SELECT COUNT(*) FROM approvals WHERE status='denied'").fetchone()[0]
     banned = c.execute("SELECT COUNT(*) FROM banned_devices").fetchone()[0]
     active = c.execute("SELECT COUNT(*) FROM active_devices").fetchone()[0]
+    approved_devices = c.execute("SELECT COUNT(*) FROM approved_devices").fetchone()[0]
     
     recent = c.execute("""SELECT username, device_name, status, timestamp 
                           FROM approvals ORDER BY timestamp DESC LIMIT 10""").fetchall()
@@ -260,8 +275,37 @@ def get_access_stats():
         "denied": denied,
         "banned": banned,
         "active": active,
+        "approved_devices": approved_devices,
         "recent": recent
     }
+
+def is_device_approved(device_name):
+    """التحقق مما إذا كان الجهاز معتمداً بالفعل (للكلمة الأساسية)"""
+    c.execute("SELECT device_name FROM approved_devices WHERE device_name = ?", (device_name,))
+    row = c.fetchone()
+    return row is not None
+
+def approve_device(device_name, username, approved_by="bot"):
+    """تسجيل جهاز كجهاز معتمد (للكلمة الأساسية)"""
+    now = int(time.time())
+    c.execute("""INSERT OR REPLACE INTO approved_devices 
+                 (device_name, username, approved_at, last_login, approved_by) 
+                 VALUES (?, ?, ?, ?, ?)""",
+              (device_name, username, now, now, approved_by))
+    conn.commit()
+
+def update_device_last_login(device_name):
+    """تحديث آخر تسجيل دخول للجهاز"""
+    c.execute("UPDATE approved_devices SET last_login = ? WHERE device_name = ?", (int(time.time()), device_name))
+    conn.commit()
+
+def cleanup_expired_temp_sessions():
+    """تنظيف الجلسات المؤقتة المنتهية"""
+    now = int(time.time())
+    c.execute("DELETE FROM active_sessions WHERE session_expires < ? AND session_type = 'temp'", (now,))
+    conn.commit()
+    c.execute("DELETE FROM temp_passwords WHERE expires_at < ?", (now,))
+    conn.commit()
 
 # ===================== إعدادات البوت =====================
 bot = telegram.Bot(token=BOT_TOKEN)
@@ -275,6 +319,7 @@ def send_main_menu(chat_id):
     logo = get_setting("custom_logo", CUSTOM_LOGO)
     welcome = get_setting("welcome_message", WELCOME_MESSAGE)
     
+    # قائمة مبسطة - إزالة الأزرار المكررة
     keyboard = [
         [
             InlineKeyboardButton("📋 الطلبات المعلقة", callback_data="menu_pending"),
@@ -298,15 +343,10 @@ def send_main_menu(chat_id):
         ],
         [
             InlineKeyboardButton("🔑 كلمة مرور مؤقتة", callback_data="menu_temp_password"),
-            InlineKeyboardButton("🔄 تحديث حالة الأجهزة", callback_data="menu_refresh_devices")
+            InlineKeyboardButton("🚪 تسجيل خروج جهاز", callback_data="menu_force_logout")
         ],
         [
-            InlineKeyboardButton("🚪 تسجيل خروج جهاز", callback_data="menu_force_logout"),
             InlineKeyboardButton("🗑️ مسح الطلبات", callback_data="menu_clear_requests_options")
-        ],
-        [
-            InlineKeyboardButton("📢 إرسال إشعار", callback_data="menu_send_notification"),
-            InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="back_to_main")
         ]
     ]
     
@@ -732,7 +772,9 @@ def show_welcome_template_menu(chat_id, message_id=None):
             text=text,
             parse_mode=telegram.ParseMode.MARKDOWN
         )
-    context.user_data['waiting_for_welcome_template'] = True
+
+# متغير سياق مؤقت لاستخدامه في الدوال
+context_holder = {'user_data': {}}
 
 def handle_callback(update, context):
     query = update.callback_query
@@ -742,16 +784,6 @@ def handle_callback(update, context):
     chat_id = query.message.chat_id
     message_id = query.message.message_id
     
-    # ========== زر تحديث حالة الأجهزة ==========
-    if data == "menu_refresh_devices":
-        keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
-        query.edit_message_text(
-            text="✅ **تم تحديث حالة الأجهزة بنجاح!**\n\nسيتم إعادة التحقق من جميع الأجهزة النشطة.",
-            parse_mode=telegram.ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        return
-    
     # ========== زر تسجيل خروج جهاز ==========
     if data == "menu_force_logout":
         show_device_list_for_logout(chat_id, message_id)
@@ -760,6 +792,7 @@ def handle_callback(update, context):
     if data.startswith("force_logout_"):
         device_name = data[13:]
         c.execute("DELETE FROM active_sessions WHERE device_name = ?", (device_name,))
+        c.execute("DELETE FROM approved_devices WHERE device_name = ?", (device_name,))
         conn.commit()
         
         keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
@@ -1025,6 +1058,7 @@ def handle_callback(update, context):
 ❌ *تم الرفض:* {stats['denied']}
 🚫 *الأجهزة المحظورة:* {stats['banned']}
 📱 *الأجهزة النشطة:* {stats['active']}
+✅ *الأجهزة المعتمدة:* {stats['approved_devices']}
 
 🔄 *آخر تحديث:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
@@ -1236,17 +1270,13 @@ def handle_callback(update, context):
         row = c.fetchone()
         if row:
             username, device_name, ip_address = row
-            session_expires = int(time.time()) + 86400
-            c.execute("""INSERT OR REPLACE INTO active_sessions 
-                         (device_name, username, session_expires, session_type, created_at) 
-                         VALUES (?, ?, ?, ?, ?)""",
-                      (device_name, username, session_expires, "normal", int(time.time())))
-            conn.commit()
+            # تسجيل الجهاز كجهاز معتمد (للكلمة الأساسية - لا تنتهي صلاحيته أبداً)
+            approve_device(device_name, username, "bot")
             log_access(username, device_name, ip_address, "approved")
         
         try:
             query.edit_message_text(
-                text=f"✅ **تمت الموافقة بنجاح**\n\nيمكن للمستخدم الآن الدخول إلى التطبيق.\n\n{get_setting('custom_logo', CUSTOM_LOGO)}",
+                text=f"✅ **تمت الموافقة بنجاح**\n\nتمت إضافة الجهاز إلى قائمة الأجهزة المعتمدة.\nيمكن للمستخدم الآن الدخول إلى التطبيق في أي وقت.\n\n{get_setting('custom_logo', CUSTOM_LOGO)}",
                 parse_mode=telegram.ParseMode.MARKDOWN
             )
         except:
@@ -1409,6 +1439,7 @@ def handle_message(update, context):
                     expires_at = now + (duration * 86400)
                     time_text = f"{duration} يوم"
                 
+                # إنشاء كلمة مرور مؤقتة
                 temp_password = hashlib.md5(f"{device_name}{time.time()}".encode()).hexdigest()[:8]
                 temp_hash = hashlib.sha256(temp_password.encode()).hexdigest()
                 
@@ -1417,6 +1448,7 @@ def handle_message(update, context):
                           (temp_hash, device_name, now, expires_at))
                 conn.commit()
                 
+                # إنشاء جلسة مؤقتة في active_sessions
                 c.execute("""INSERT OR REPLACE INTO active_sessions 
                              (device_name, username, session_expires, session_type, created_at) 
                              VALUES (?, ?, ?, ?, ?)""",
@@ -1569,14 +1601,25 @@ bot_thread = threading.Thread(target=run_bot)
 bot_thread.daemon = True
 bot_thread.start()
 
+# تشغيل مهمة تنظيف الجلسات المنتهية كل ساعة
+def cleanup_scheduler():
+    while True:
+        time.sleep(3600)  # كل ساعة
+        cleanup_expired_temp_sessions()
+        print(f"[CLEANUP] Cleaned expired temp sessions at {datetime.now()}")
+
+cleanup_thread = threading.Thread(target=cleanup_scheduler)
+cleanup_thread.daemon = True
+cleanup_thread.start()
+
 # ===================== API للتطبيق =====================
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({
         "status": "online",
         "service": "Tomb Bot Protection System",
-        "version": "5.0",
-        "message": "API is working! (Advanced ban system with temp passwords)",
+        "version": "6.0",
+        "message": "API is working! (Permanent passwords for approved devices)",
         "endpoints": [
             "/request_access - POST",
             "/check_status/<request_id> - GET", 
@@ -1593,6 +1636,7 @@ def home():
             "/refresh_device_status - POST",
             "/get_welcome_template - GET",
             "/get_notifications/<device_name> - GET",
+            "/check_device_approved - POST",
             "/health - GET"
         ]
     })
@@ -1626,13 +1670,26 @@ def request_access():
                 "remaining_text": ban_info.get('remaining_text', '')
             })
         
+        # التحقق مما إذا كان الجهاز معتمداً بالفعل (كلمة أساسية سابقة)
+        if is_device_approved(device_name):
+            update_device_last_login(device_name)
+            add_active_device(device_name, username, device_info)
+            log_access(username, device_name, ip_address, "auto_approved")
+            print(f"✅ Device {device_name} is already approved, auto-login")
+            return jsonify({
+                "status": "approved",
+                "message": "تم الدخول تلقائياً (جهاز معتمد)",
+                "session_type": "normal",
+                "expires_at": 0  # 0 يعني لا تنتهي أبداً
+            })
+        
         # التحقق من كلمة المرور المؤقتة
         temp_password = data.get('temp_password')
         if temp_password:
             temp_hash = hashlib.sha256(temp_password.encode()).hexdigest()
             c.execute("""SELECT id, device_name, expires_at FROM temp_passwords 
-                         WHERE password_hash = ? AND used = 0 AND expires_at > ?""",
-                      (temp_hash, int(time.time())))
+                         WHERE password_hash = ? AND device_name = ? AND used = 0 AND expires_at > ?""",
+                      (temp_hash, device_name, int(time.time())))
             row = c.fetchone()
             if row:
                 temp_id, temp_device, expires_at = row
@@ -1644,6 +1701,7 @@ def request_access():
                              VALUES (?, ?, ?, ?, ?)""",
                           (device_name, username, expires_at, "temp", int(time.time())))
                 conn.commit()
+                log_access(username, device_name, ip_address, "temp_password")
                 return jsonify({
                     "status": "approved", 
                     "message": "تم الدخول عبر كلمة مرور مؤقتة",
@@ -1653,22 +1711,20 @@ def request_access():
             else:
                 # التحقق من كلمة المرور العادية
                 if check_password(temp_password):
-                    # إنشاء جلسة عادية
-                    session_expires = int(time.time()) + 86400
-                    c.execute("""INSERT OR REPLACE INTO active_sessions 
-                                 (device_name, username, session_expires, session_type, created_at) 
-                                 VALUES (?, ?, ?, ?, ?)""",
-                              (device_name, username, session_expires, "normal", int(time.time())))
-                    conn.commit()
+                    # إنشاء جهاز معتمد (لا تنتهي صلاحيته أبداً)
+                    approve_device(device_name, username, "password")
+                    add_active_device(device_name, username, device_info)
+                    log_access(username, device_name, ip_address, "password_login")
                     return jsonify({
                         "status": "approved",
-                        "message": "تم الدخول عبر كلمة المرور الرئيسية",
-                        "expires_at": session_expires,
-                        "session_type": "normal"
+                        "message": "تم الدخول عبر كلمة المرور الرئيسية (جهاز معتمد)",
+                        "session_type": "normal",
+                        "expires_at": 0  # 0 يعني لا تنتهي أبداً
                     })
                 else:
-                    return jsonify({"status": "temp_expired", "message": "كلمة المرور غير صحيحة"})
+                    return jsonify({"status": "invalid", "message": "كلمة المرور غير صحيحة"})
         
+        # إرسال طلب موافقة للمطور
         send_approval_request(
             request_id=request_id,
             app_name=app_name,
@@ -1718,8 +1774,12 @@ def verify_password():
     try:
         data = request.json
         password = data.get('password', '')
+        device_name = data.get('device_name', '')
         
         if check_password(password):
+            # إذا كان الجهاز معتمداً بالفعل، قم بتحديث آخر دخول
+            if device_name and is_device_approved(device_name):
+                update_device_last_login(device_name)
             return jsonify({"valid": True})
         return jsonify({"valid": False})
     
@@ -1740,14 +1800,40 @@ def verify_temp_password():
         row = c.fetchone()
         
         if row:
-            c.execute("UPDATE temp_passwords SET used = 1 WHERE id = ?", (row[0],))
-            conn.commit()
+            # لا نستخدم used = 1 هنا لأننا نريد السماح باستخدامها مرة واحدة فقط
+            # لكننا نحتاج للتحقق إذا كانت لا تزال صالحة
             return jsonify({"valid": True, "expires_at": row[1]})
         
         return jsonify({"valid": False})
     
     except Exception as e:
         return jsonify({"valid": False, "error": str(e)}), 500
+
+@app.route('/check_device_approved', methods=['POST'])
+def check_device_approved():
+    try:
+        data = request.json
+        device_name = data.get('device_name', '')
+        
+        if is_device_banned(device_name):
+            ban_info = get_device_ban_info(device_name)
+            return jsonify({
+                "approved": False,
+                "banned": True,
+                "message": ban_info['reason']
+            })
+        
+        approved = is_device_approved(device_name)
+        if approved:
+            update_device_last_login(device_name)
+        
+        return jsonify({
+            "approved": approved,
+            "banned": False
+        })
+    
+    except Exception as e:
+        return jsonify({"approved": False, "banned": False, "error": str(e)}), 500
 
 @app.route('/change_password', methods=['POST'])
 def change_password():
@@ -1847,6 +1933,10 @@ def notify_app_opened():
         
         add_active_device(device_name, "SYSTEM", device_info)
         
+        # تحديث آخر دخول للجهاز إذا كان معتمداً
+        if is_device_approved(device_name):
+            update_device_last_login(device_name)
+        
         message = f"""
 📱 *جهاز فتح التطبيق* 📱
 
@@ -1887,13 +1977,26 @@ def check_session():
                 "remaining": ban_info.get('remaining_text', '')
             })
         
+        # أولاً: التحقق من الأجهزة المعتمدة (كلمة أساسية - لا تنتهي أبداً)
+        if is_device_approved(device_name):
+            update_device_last_login(device_name)
+            return jsonify({
+                "valid": True,
+                "session_type": "normal",
+                "expires_at": 0,
+                "remaining_hours": -1,
+                "remaining_text": "لا تنتهي أبداً"
+            })
+        
+        # ثانياً: التحقق من الجلسات المؤقتة
         c.execute("SELECT session_expires, session_type FROM active_sessions WHERE device_name = ?", (device_name,))
         row = c.fetchone()
         
         if row:
             session_expires, session_type = row
-            if session_expires > int(time.time()):
-                remaining_seconds = session_expires - int(time.time())
+            now = int(time.time())
+            if session_expires > now:
+                remaining_seconds = session_expires - now
                 if session_type == "temp":
                     if remaining_seconds < 3600:
                         remaining_text = f"{remaining_seconds // 60} دقيقة"
@@ -1925,7 +2028,10 @@ def force_logout():
         data = request.json
         device_name = data.get('device_name', '')
         
+        # حذف الجلسة المؤقتة إذا وجدت
         c.execute("DELETE FROM active_sessions WHERE device_name = ?", (device_name,))
+        # حذف الجهاز من الأجهزة المعتمدة
+        c.execute("DELETE FROM approved_devices WHERE device_name = ?", (device_name,))
         conn.commit()
         
         return jsonify({"status": "logged_out", "device_name": device_name})
@@ -1941,6 +2047,7 @@ def refresh_device_status():
         if is_device_banned(device_name):
             ban_info = get_device_ban_info(device_name)
             c.execute("DELETE FROM active_sessions WHERE device_name = ?", (device_name,))
+            c.execute("DELETE FROM approved_devices WHERE device_name = ?", (device_name,))
             conn.commit()
             return jsonify({
                 "status": "banned",
@@ -1949,6 +2056,11 @@ def refresh_device_status():
                 "remaining": ban_info.get('remaining_text', '')
             })
         
+        # التحقق من الأجهزة المعتمدة أولاً
+        if is_device_approved(device_name):
+            update_device_last_login(device_name)
+            return jsonify({"status": "valid", "type": "permanent"})
+        
         c.execute("SELECT session_expires FROM active_sessions WHERE device_name = ?", (device_name,))
         row = c.fetchone()
         if row:
@@ -1956,7 +2068,7 @@ def refresh_device_status():
                 c.execute("DELETE FROM active_sessions WHERE device_name = ?", (device_name,))
                 conn.commit()
                 return jsonify({"status": "expired", "message": "انتهت صلاحية الجلسة"})
-            return jsonify({"status": "valid"})
+            return jsonify({"status": "valid", "type": "temp"})
         
         return jsonify({"status": "no_session"})
     
@@ -1999,7 +2111,7 @@ def health():
     return jsonify({
         "status": "ok",
         "bot": "running",
-        "version": "5.0",
+        "version": "6.0",
         "timestamp": int(time.time())
     })
 
