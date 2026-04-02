@@ -19,7 +19,6 @@ app = Flask(__name__)
 CORS(app)
 
 # ===================== قاعدة البيانات =====================
-# تم إصلاح الاتصال ليكون آمنًا للخيوط
 conn = sqlite3.connect('tomb_bot.db', check_same_thread=False)
 c = conn.cursor()
 
@@ -45,7 +44,7 @@ c.execute('''CREATE TABLE IF NOT EXISTS passwords
               updated_at INTEGER,
               updated_by TEXT)''')
 
-# جدول سجل الدخول (سيتم تعديله ليكون لكل جهاز آخر دخول)
+# جدول سجل الدخول
 c.execute('''CREATE TABLE IF NOT EXISTS access_logs
              (id INTEGER PRIMARY KEY AUTOINCREMENT,
               username TEXT,
@@ -63,7 +62,7 @@ c.execute('''CREATE TABLE IF NOT EXISTS banned_devices
               ban_type TEXT,
               reason TEXT)''')
 
-# جدول الأجهزة النشطة (آخر نشاط)
+# جدول الأجهزة النشطة
 c.execute('''CREATE TABLE IF NOT EXISTS active_devices
              (device_name TEXT PRIMARY KEY,
               username TEXT,
@@ -89,7 +88,7 @@ c.execute('''CREATE TABLE IF NOT EXISTS active_sessions
               session_type TEXT,
               created_at INTEGER)''')
 
-# جدول الأجهزة المعتمدة (للدخول الدائم بدون طلب)
+# جدول الأجهزة المعتمدة (للدخول الدائم)
 c.execute('''CREATE TABLE IF NOT EXISTS approved_devices
              (device_name TEXT PRIMARY KEY,
               username TEXT,
@@ -144,24 +143,16 @@ def update_password(new_password, updated_by="bot"):
     return True
 
 def log_access(username, device_name, ip_address, status):
-    """
-    يتم تسجيل الدخول مع تحديث اسم المستخدم للجهاز في جدول approvals
-    بحيث لا يتكرر الجهاز أكثر من مرة في السجلات الأساسية
-    """
     now = int(time.time())
-    # تسجيل في سجل الدخول (للإحصائيات المؤقتة)
     c.execute("""INSERT INTO access_logs 
                  (username, device_name, ip_address, status, timestamp) 
                  VALUES (?, ?, ?, ?, ?)""",
               (username, device_name, ip_address, status, now))
     
-    # تحديث اسم المستخدم للجهاز في جدول approvals (أساسي)
-    # هذا يحل مشكلة التكرار: سيتم تحديث آخر اسم مستخدم للجهاز
     c.execute("SELECT device_name FROM approvals WHERE device_name = ?", (device_name,))
     if c.fetchone():
         c.execute("UPDATE approvals SET username = ? WHERE device_name = ?", (username, device_name))
     else:
-        # إذا لم يكن موجوداً، نضيفه (لأغراض أمنية، مع حالة "logged")
         c.execute("INSERT INTO approvals (request_id, status, timestamp, username, device_name, device_info, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?)",
                   (f"log_{device_name}_{now}", "logged", now, username, device_name, "System", ip_address))
     
@@ -187,19 +178,16 @@ def get_active_devices():
 
 def get_all_known_devices():
     devices = {}
-    # نأخذ البيانات من approvals حيث كل جهاز مرة واحدة (لأننا نحدث اسم المستخدم)
     c.execute("SELECT DISTINCT device_name, username FROM approvals")
     for row in c.fetchall():
         device_name, username = row
         if device_name not in devices:
             devices[device_name] = username
-    # نضيف الأجهزة النشطة إذا كانت جديدة
     c.execute("SELECT device_name, username FROM active_devices")
     for row in c.fetchall():
         device_name, username = row
         if device_name not in devices:
             devices[device_name] = username
-    # الأجهزة المعتمدة
     c.execute("SELECT device_name, username FROM approved_devices")
     for row in c.fetchall():
         device_name, username = row
@@ -314,6 +302,7 @@ def approve_device(device_name, username, approved_by="bot"):
     conn.commit()
 
 def update_device_last_login(device_name):
+    """تحديث آخر تسجيل دخول للجهاز"""
     c.execute("UPDATE approved_devices SET last_login = ? WHERE device_name = ?", (int(time.time()), device_name))
     conn.commit()
 
@@ -663,15 +652,15 @@ def show_clear_requests_menu(chat_id, message_id=None):
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
-def show_temp_password_duration_menu(chat_id, device_name, username, message_id=None):
+def show_temp_password_menu(chat_id, message_id=None):
+    """القائمة الرئيسية لكلمة المرور المؤقتة مع خيارين"""
     keyboard = [
-        [InlineKeyboardButton("⏰ دقائق", callback_data=f"temp_duration_minutes_{device_name}")],
-        [InlineKeyboardButton("🕐 ساعات", callback_data=f"temp_duration_hours_{device_name}")],
-        [InlineKeyboardButton("📅 أيام", callback_data=f"temp_duration_days_{device_name}")],
-        [InlineKeyboardButton("🔙 إلغاء", callback_data="menu_temp_password")]
+        [InlineKeyboardButton("📱 جهاز محدد", callback_data="temp_specific_device")],
+        [InlineKeyboardButton("👥 جميع الأجهزة", callback_data="temp_all_devices")],
+        [InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]
     ]
     
-    text = f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n👤 **المستخدم:** {username}\n\nاختر وحدة المدة:"
+    text = "🔑 **كلمات المرور المؤقتة**\n\nاختر نوع كلمة المرور:\n\n• **جهاز محدد:** كلمة مرور لجهاز واحد فقط\n• **جميع الأجهزة:** كلمة مرور واحدة صالحة لجميع الأجهزة النشطة\n\n⚠️ جميع كلمات المرور مؤقتة وتنتهي بعد المدة التي تحددها."
     
     if message_id:
         bot.edit_message_text(
@@ -688,6 +677,87 @@ def show_temp_password_duration_menu(chat_id, device_name, username, message_id=
             parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+
+def show_temp_password_duration_menu(chat_id, device_name, username, message_id=None, is_all_devices=False):
+    """قائمة اختيار المدة لكلمة المرور المؤقتة"""
+    callback_prefix = "temp_all_duration" if is_all_devices else "temp_duration"
+    keyboard = [
+        [InlineKeyboardButton("⏰ دقائق", callback_data=f"{callback_prefix}_minutes_{device_name}")],
+        [InlineKeyboardButton("🕐 ساعات", callback_data=f"{callback_prefix}_hours_{device_name}")],
+        [InlineKeyboardButton("📅 أيام", callback_data=f"{callback_prefix}_days_{device_name}")],
+        [InlineKeyboardButton("🔙 إلغاء", callback_data="menu_temp_password")]
+    ]
+    
+    if is_all_devices:
+        text = f"🔑 **كلمة مرور مؤقتة لجميع الأجهزة**\n\nاختر وحدة المدة:"
+    else:
+        text = f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n👤 **المستخدم:** {username}\n\nاختر وحدة المدة:"
+    
+    if message_id:
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+def create_temp_password_for_device(device_name, duration, unit, is_all_devices=False):
+    """إنشاء كلمة مرور مؤقتة لجهاز أو لجميع الأجهزة"""
+    now = int(time.time())
+    
+    if unit == "minutes":
+        expires_at = now + (duration * 60)
+        time_text = f"{duration} دقيقة"
+    elif unit == "hours":
+        expires_at = now + (duration * 3600)
+        time_text = f"{duration} ساعة"
+    else:
+        expires_at = now + (duration * 86400)
+        time_text = f"{duration} يوم"
+    
+    # إنشاء كلمة مرور مؤقتة
+    temp_password = hashlib.md5(f"{device_name}{time.time()}{is_all_devices}".encode()).hexdigest()[:8]
+    temp_hash = hashlib.sha256(temp_password.encode()).hexdigest()
+    
+    if is_all_devices:
+        # لجميع الأجهزة: نستخدم "all" كاسم الجهاز
+        c.execute("""INSERT INTO temp_passwords (password_hash, device_name, created_at, expires_at, used) 
+                     VALUES (?, ?, ?, ?, 0)""",
+                  (temp_hash, "all", now, expires_at))
+        conn.commit()
+        
+        # إنشاء جلسة مؤقتة لجميع الأجهزة النشطة
+        active_devices = get_active_devices()
+        for device in active_devices:
+            dev_name = device[0]
+            c.execute("""INSERT OR REPLACE INTO active_sessions 
+                         (device_name, username, session_expires, session_type, created_at) 
+                         VALUES (?, ?, ?, ?, ?)""",
+                      (dev_name, "TEMP_USER", expires_at, "temp", now))
+        conn.commit()
+    else:
+        # لجهاز محدد
+        c.execute("""INSERT INTO temp_passwords (password_hash, device_name, created_at, expires_at, used) 
+                     VALUES (?, ?, ?, ?, 0)""",
+                  (temp_hash, device_name, now, expires_at))
+        conn.commit()
+        
+        # إنشاء جلسة مؤقتة للجهاز المحدد
+        c.execute("""INSERT OR REPLACE INTO active_sessions 
+                     (device_name, username, session_expires, session_type, created_at) 
+                     VALUES (?, ?, ?, ?, ?)""",
+                  (device_name, "TEMP_USER", expires_at, "temp", now))
+        conn.commit()
+    
+    return temp_password, time_text
 
 def show_send_notification_menu(chat_id, message_id=None):
     keyboard = [
@@ -789,7 +859,7 @@ def show_welcome_template_menu(chat_id, message_id=None):
             parse_mode=telegram.ParseMode.MARKDOWN
         )
 
-# متغير سياق مؤقت لاستخدامه في الدوال
+# متغير سياق مؤقت
 context_holder = {'user_data': {}}
 
 def handle_callback(update, context):
@@ -925,20 +995,13 @@ def handle_callback(update, context):
         send_main_menu(chat_id)
         return
     
-    # ========== كلمة المرور المؤقتة ==========
+    # ========== كلمة المرور المؤقتة (قائمة جديدة) ==========
     if data == "menu_temp_password":
-        keyboard = [
-            [InlineKeyboardButton("🔑 إنشاء كلمة مرور مؤقتة", callback_data="create_temp_password")],
-            [InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]
-        ]
-        query.edit_message_text(
-            "🔑 **كلمات المرور المؤقتة**\n\nيمكنك إنشاء كلمة مرور مؤقتة لجهاز معين.\n\nسيتم إنشاء كلمة مرور صالحة للمدة التي تختارها.\n⚠️ **ملاحظة:** بعد انتهاء الصلاحية سيتم إرجاع المستخدم لشاشة تسجيل الدخول.",
-            parse_mode=telegram.ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+        show_temp_password_menu(chat_id, message_id)
         return
     
-    if data == "create_temp_password":
+    # ========== كلمة مرور مؤقتة لجهاز محدد ==========
+    if data == "temp_specific_device":
         devices = get_all_known_devices()
         if not devices:
             query.edit_message_text("📭 لا توجد أجهزة معروفة")
@@ -957,18 +1020,25 @@ def handle_callback(update, context):
         )
         return
     
+    # ========== كلمة مرور مؤقتة لجميع الأجهزة ==========
+    if data == "temp_all_devices":
+        show_temp_password_duration_menu(chat_id, "all", "جميع الأجهزة", message_id, is_all_devices=True)
+        return
+    
     if data.startswith("temp_select_"):
         device_name = data[12:]
         c.execute("SELECT username FROM approvals WHERE device_name = ? ORDER BY timestamp DESC LIMIT 1", (device_name,))
         row = c.fetchone()
         username = row[0] if row else "Unknown"
-        show_temp_password_duration_menu(chat_id, device_name, username, message_id)
+        show_temp_password_duration_menu(chat_id, device_name, username, message_id, is_all_devices=False)
         return
     
+    # ========== اختيار المدة لجهاز محدد ==========
     if data.startswith("temp_duration_minutes_"):
         device_name = data[21:]
         context.user_data['temp_device'] = device_name
         context.user_data['temp_unit'] = "minutes"
+        context.user_data['temp_all_devices'] = False
         query.edit_message_text(
             text=f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n\n⏰ أدخل عدد الدقائق (1-59):",
             parse_mode=telegram.ParseMode.MARKDOWN
@@ -980,6 +1050,7 @@ def handle_callback(update, context):
         device_name = data[19:]
         context.user_data['temp_device'] = device_name
         context.user_data['temp_unit'] = "hours"
+        context.user_data['temp_all_devices'] = False
         query.edit_message_text(
             text=f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n\n🕐 أدخل عدد الساعات (1-23):",
             parse_mode=telegram.ParseMode.MARKDOWN
@@ -991,8 +1062,46 @@ def handle_callback(update, context):
         device_name = data[18:]
         context.user_data['temp_device'] = device_name
         context.user_data['temp_unit'] = "days"
+        context.user_data['temp_all_devices'] = False
         query.edit_message_text(
             text=f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n\n📅 أدخل عدد الأيام (1-365):",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        context.user_data['waiting_for_temp_duration'] = True
+        return
+    
+    # ========== اختيار المدة لجميع الأجهزة ==========
+    if data.startswith("temp_all_duration_minutes_"):
+        device_name = data[24:]
+        context.user_data['temp_device'] = "all"
+        context.user_data['temp_unit'] = "minutes"
+        context.user_data['temp_all_devices'] = True
+        query.edit_message_text(
+            text=f"🔑 **كلمة مرور مؤقتة لجميع الأجهزة**\n\n⏰ أدخل عدد الدقائق (1-59):",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        context.user_data['waiting_for_temp_duration'] = True
+        return
+    
+    if data.startswith("temp_all_duration_hours_"):
+        device_name = data[22:]
+        context.user_data['temp_device'] = "all"
+        context.user_data['temp_unit'] = "hours"
+        context.user_data['temp_all_devices'] = True
+        query.edit_message_text(
+            text=f"🔑 **كلمة مرور مؤقتة لجميع الأجهزة**\n\n🕐 أدخل عدد الساعات (1-23):",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        context.user_data['waiting_for_temp_duration'] = True
+        return
+    
+    if data.startswith("temp_all_duration_days_"):
+        device_name = data[21:]
+        context.user_data['temp_device'] = "all"
+        context.user_data['temp_unit'] = "days"
+        context.user_data['temp_all_devices'] = True
+        query.edit_message_text(
+            text=f"🔑 **كلمة مرور مؤقتة لجميع الأجهزة**\n\n📅 أدخل عدد الأيام (1-365):",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
         context.user_data['waiting_for_temp_duration'] = True
@@ -1087,7 +1196,6 @@ def handle_callback(update, context):
         return
     
     elif data == "menu_approved":
-        # عرض الأجهزة المعتمدة (من جدول approved_devices)
         approved_devices = c.execute(
             "SELECT username, device_name, approved_at FROM approved_devices ORDER BY approved_at DESC LIMIT 20"
         ).fetchall()
@@ -1436,6 +1544,7 @@ def handle_message(update, context):
             duration = int(text)
             unit = context.user_data.get('temp_unit')
             device_name = context.user_data.get('temp_device')
+            is_all_devices = context.user_data.get('temp_all_devices', False)
             
             if unit == "minutes" and (duration < 1 or duration > 59):
                 bot.send_message(chat_id=chat_id, text="❌ عدد الدقائق يجب أن يكون بين 1 و 59")
@@ -1444,44 +1553,29 @@ def handle_message(update, context):
             elif unit == "days" and (duration < 1 or duration > 365):
                 bot.send_message(chat_id=chat_id, text="❌ عدد الأيام يجب أن يكون بين 1 و 365")
             else:
-                now = int(time.time())
-                if unit == "minutes":
-                    expires_at = now + (duration * 60)
-                    time_text = f"{duration} دقيقة"
-                elif unit == "hours":
-                    expires_at = now + (duration * 3600)
-                    time_text = f"{duration} ساعة"
-                else:
-                    expires_at = now + (duration * 86400)
-                    time_text = f"{duration} يوم"
-                
-                # إنشاء كلمة مرور مؤقتة
-                temp_password = hashlib.md5(f"{device_name}{time.time()}".encode()).hexdigest()[:8]
-                temp_hash = hashlib.sha256(temp_password.encode()).hexdigest()
-                
-                c.execute("""INSERT INTO temp_passwords (password_hash, device_name, created_at, expires_at, used) 
-                             VALUES (?, ?, ?, ?, 0)""",
-                          (temp_hash, device_name, now, expires_at))
-                conn.commit()
-                
-                # إنشاء جلسة مؤقتة في active_sessions
-                c.execute("""INSERT OR REPLACE INTO active_sessions 
-                             (device_name, username, session_expires, session_type, created_at) 
-                             VALUES (?, ?, ?, ?, ?)""",
-                          (device_name, "TEMP_USER", expires_at, "temp", now))
-                conn.commit()
-                
-                bot.send_message(
-                    chat_id=chat_id,
-                    text=f"✅ **تم إنشاء كلمة مرور مؤقتة!**\n\n📱 الجهاز: `{device_name}`\n🔑 كلمة المرور: `{temp_password}`\n⏰ المدة: {time_text}\n\n⚠️ بعد انتهاء المدة سيتم إرجاع المستخدم لشاشة تسجيل الدخول",
-                    parse_mode=telegram.ParseMode.MARKDOWN
+                temp_password, time_text = create_temp_password_for_device(
+                    device_name, duration, unit, is_all_devices
                 )
+                
+                if is_all_devices:
+                    bot.send_message(
+                        chat_id=chat_id,
+                        text=f"✅ **تم إنشاء كلمة مرور مؤقتة لجميع الأجهزة!**\n\n🔑 كلمة المرور: `{temp_password}`\n⏰ المدة: {time_text}\n\n⚠️ هذه الكلمة صالحة لجميع الأجهزة النشطة.\nبعد انتهاء المدة سيتم إرجاع جميع المستخدمين لشاشة تسجيل الدخول.",
+                        parse_mode=telegram.ParseMode.MARKDOWN
+                    )
+                else:
+                    bot.send_message(
+                        chat_id=chat_id,
+                        text=f"✅ **تم إنشاء كلمة مرور مؤقتة!**\n\n📱 الجهاز: `{device_name}`\n🔑 كلمة المرور: `{temp_password}`\n⏰ المدة: {time_text}\n\n⚠️ بعد انتهاء المدة سيتم إرجاع المستخدم لشاشة تسجيل الدخول.",
+                        parse_mode=telegram.ParseMode.MARKDOWN
+                    )
         except ValueError:
             bot.send_message(chat_id=chat_id, text="❌ الرجاء إدخال رقم صحيح")
         
         context.user_data.pop('waiting_for_temp_duration', None)
         context.user_data.pop('temp_device', None)
         context.user_data.pop('temp_unit', None)
+        context.user_data.pop('temp_all_devices', None)
         send_main_menu(chat_id)
         return
     
@@ -1654,8 +1748,8 @@ def home():
     return jsonify({
         "status": "online",
         "service": "Tomb Bot Protection System",
-        "version": "6.1",
-        "message": "API is working! (Permanent passwords for approved devices, No duplicate devices)",
+        "version": "6.2",
+        "message": "API is working! (Permanent passwords for approved devices, Temporary passwords with expiration)",
         "endpoints": [
             "/request_access - POST",
             "/check_status/<request_id> - GET", 
@@ -1670,6 +1764,7 @@ def home():
             "/check_session - POST",
             "/force_logout - POST",
             "/refresh_device_status - POST",
+            "/update_device_last_login - POST",
             "/get_welcome_template - GET",
             "/get_notifications/<device_name> - GET",
             "/check_device_approved - POST",
@@ -1716,7 +1811,7 @@ def request_access():
                 "status": "approved",
                 "message": "تم الدخول تلقائياً (جهاز معتمد)",
                 "session_type": "normal",
-                "expires_at": 0  # 0 يعني لا تنتهي أبداً
+                "expires_at": 0
             })
         
         # إرسال طلب موافقة للمطور
@@ -1772,7 +1867,6 @@ def verify_password():
         device_name = data.get('device_name', '')
         
         if check_password(password):
-            # إذا كان الجهاز معتمداً بالفعل، قم بتحديث آخر دخول
             if device_name and is_device_approved(device_name):
                 update_device_last_login(device_name)
             return jsonify({"valid": True})
@@ -1789,12 +1883,17 @@ def verify_temp_password():
         device_name = data.get('device_name', '')
         
         temp_hash = hashlib.sha256(temp_password.encode()).hexdigest()
-        c.execute("""SELECT id, expires_at FROM temp_passwords 
-                     WHERE password_hash = ? AND device_name = ? AND used = 0 AND expires_at > ?""",
+        
+        # التحقق من كلمة المرور المؤقتة للجهاز المحدد أو لجميع الأجهزة
+        c.execute("""SELECT id, expires_at, device_name FROM temp_passwords 
+                     WHERE password_hash = ? AND (device_name = ? OR device_name = 'all') AND used = 0 AND expires_at > ?""",
                   (temp_hash, device_name, int(time.time())))
         row = c.fetchone()
         
         if row:
+            # نستخدم الكلمة مرة واحدة
+            c.execute("UPDATE temp_passwords SET used = 1 WHERE id = ?", (row[0],))
+            conn.commit()
             return jsonify({"valid": True, "expires_at": row[1]})
         
         return jsonify({"valid": False})
@@ -1926,7 +2025,6 @@ def notify_app_opened():
         
         add_active_device(device_name, "SYSTEM", device_info)
         
-        # تحديث آخر دخول للجهاز إذا كان معتمداً
         if is_device_approved(device_name):
             update_device_last_login(device_name)
         
@@ -1970,7 +2068,7 @@ def check_session():
                 "remaining": ban_info.get('remaining_text', '')
             })
         
-        # أولاً: التحقق من الأجهزة المعتمدة (كلمة أساسية - لا تنتهي أبداً)
+        # التحقق من الأجهزة المعتمدة (كلمة أساسية - لا تنتهي أبداً)
         if is_device_approved(device_name):
             update_device_last_login(device_name)
             return jsonify({
@@ -1981,7 +2079,7 @@ def check_session():
                 "remaining_text": "لا تنتهي أبداً"
             })
         
-        # ثانياً: التحقق من الجلسات المؤقتة
+        # التحقق من الجلسات المؤقتة
         c.execute("SELECT session_expires, session_type FROM active_sessions WHERE device_name = ?", (device_name,))
         row = c.fetchone()
         
@@ -2007,7 +2105,7 @@ def check_session():
             else:
                 c.execute("DELETE FROM active_sessions WHERE device_name = ?", (device_name,))
                 conn.commit()
-                return jsonify({"valid": False, "reason": "session_expired"})
+                return jsonify({"valid": False, "reason": "session_expired", "message": "انتهت صلاحية الجلسة المؤقتة"})
         
         return jsonify({"valid": False, "reason": "no_session"})
     
@@ -2021,9 +2119,7 @@ def force_logout():
         data = request.json
         device_name = data.get('device_name', '')
         
-        # حذف الجلسة المؤقتة إذا وجدت
         c.execute("DELETE FROM active_sessions WHERE device_name = ?", (device_name,))
-        # حذف الجهاز من الأجهزة المعتمدة
         c.execute("DELETE FROM approved_devices WHERE device_name = ?", (device_name,))
         conn.commit()
         
@@ -2049,7 +2145,6 @@ def refresh_device_status():
                 "remaining": ban_info.get('remaining_text', '')
             })
         
-        # التحقق من الأجهزة المعتمدة أولاً
         if is_device_approved(device_name):
             update_device_last_login(device_name)
             return jsonify({"status": "valid", "type": "permanent"})
@@ -2067,6 +2162,26 @@ def refresh_device_status():
     
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ===================== نقطة النهاية الجديدة =====================
+@app.route('/update_device_last_login', methods=['POST'])
+def update_device_last_login_endpoint():
+    """تحديث آخر تسجيل دخول للجهاز المعتمد"""
+    try:
+        data = request.json
+        device_name = data.get('device_name', '')
+        
+        if not device_name:
+            return jsonify({"success": False, "error": "device_name is required"}), 400
+        
+        if is_device_approved(device_name):
+            update_device_last_login(device_name)
+            return jsonify({"success": True})
+        else:
+            return jsonify({"success": False, "error": "Device not approved"}), 404
+    
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/get_notifications/<device_name>', methods=['GET'])
 def get_notifications(device_name):
@@ -2104,7 +2219,7 @@ def health():
     return jsonify({
         "status": "ok",
         "bot": "running",
-        "version": "6.1",
+        "version": "6.2",
         "timestamp": int(time.time())
     })
 
