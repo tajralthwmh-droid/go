@@ -242,6 +242,7 @@ def get_device_ban_info(device_name):
     row = c.fetchone()
     if row:
         banned_until, ban_type, reason = row
+        remaining_seconds = 0
         remaining = 0
         remaining_text = ""
         if ban_type != "permanent" and banned_until > int(time.time()):
@@ -260,6 +261,7 @@ def get_device_ban_info(device_name):
             "ban_type": ban_type,
             "reason": reason,
             "remaining": remaining,
+            "remaining_seconds": remaining_seconds,
             "remaining_text": remaining_text,
             "expires_at": banned_until
         }
@@ -898,16 +900,16 @@ def handle_callback(update, context):
         show_ban_type_menu(chat_id, device_name, username, message_id)
         return
     
-    # ========== اختيار نوع الحظر ==========
+    # ========== اختيار نوع الحظر (نطلب سبب الحظر أولاً) ==========
     if data.startswith("ban_type_minutes_"):
         device_name = data[17:]
         context.user_data['ban_device'] = device_name
         context.user_data['ban_type'] = "minutes"
         query.edit_message_text(
-            text=f"🔒 **حظر جهاز:** `{device_name}`\n\n⏰ أدخل عدد الدقائق (1-59):",
+            text=f"🔒 **حظر جهاز:** `{device_name}`\n\n📝 **أدخل سبب الحظر:**\n(سيتم عرض هذا السبب للمستخدم في شاشة الحظر)",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
-        context.user_data['waiting_for_ban_duration'] = True
+        context.user_data['waiting_for_ban_reason'] = True
         return
     
     if data.startswith("ban_type_hours_"):
@@ -915,10 +917,10 @@ def handle_callback(update, context):
         context.user_data['ban_device'] = device_name
         context.user_data['ban_type'] = "hours"
         query.edit_message_text(
-            text=f"🔒 **حظر جهاز:** `{device_name}`\n\n🕐 أدخل عدد الساعات (1-23):",
+            text=f"🔒 **حظر جهاز:** `{device_name}`\n\n📝 **أدخل سبب الحظر:**\n(سيتم عرض هذا السبب للمستخدم في شاشة الحظر)",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
-        context.user_data['waiting_for_ban_duration'] = True
+        context.user_data['waiting_for_ban_reason'] = True
         return
     
     if data.startswith("ban_type_days_"):
@@ -926,27 +928,22 @@ def handle_callback(update, context):
         context.user_data['ban_device'] = device_name
         context.user_data['ban_type'] = "days"
         query.edit_message_text(
-            text=f"🔒 **حظر جهاز:** `{device_name}`\n\n📅 أدخل عدد الأيام (1-365):",
+            text=f"🔒 **حظر جهاز:** `{device_name}`\n\n📝 **أدخل سبب الحظر:**\n(سيتم عرض هذا السبب للمستخدم في شاشة الحظر)",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
-        context.user_data['waiting_for_ban_duration'] = True
+        context.user_data['waiting_for_ban_reason'] = True
         return
     
-    # ========== تأكيد الحظر الدائم ==========
+    # ========== الحظر الدائم (نطلب سبب الحظر أولاً) ==========
     if data.startswith("ban_confirm_permanent_"):
         device_name = data[22:]
-        c.execute("SELECT username FROM approvals WHERE device_name = ? ORDER BY timestamp DESC LIMIT 1", (device_name,))
-        row = c.fetchone()
-        username = row[0] if row else "Unknown"
-        
-        ban_device(device_name, username, "permanent", 0, "حظر دائم من قبل المطور")
-        
-        keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
+        context.user_data['ban_device'] = device_name
+        context.user_data['ban_type'] = "permanent"
         query.edit_message_text(
-            text=f"✅ **تم حظر الجهاز بنجاح!**\n\n📱 {device_name}\n🔒 حظر دائم",
-            parse_mode=telegram.ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            text=f"🔒 **حظر دائم لجهاز:** `{device_name}`\n\n📝 **أدخل سبب الحظر الدائم:**\n(سيتم عرض هذا السبب للمستخدم في شاشة الحظر)",
+            parse_mode=telegram.ParseMode.MARKDOWN
         )
+        context.user_data['waiting_for_ban_reason'] = True
         return
     
     # ========== اختيار جهاز لرفع الحظر ==========
@@ -1477,18 +1474,78 @@ def handle_message(update, context):
         bot.send_message(chat_id=chat_id, text="⚠️ أنت غير مصرح لك باستخدام هذا البوت")
         return
     
-    # معالجة إدخال مدة الحظر
+    # ========== معالجة سبب الحظر أولاً ==========
+    if context.user_data.get('waiting_for_ban_reason'):
+        ban_reason = text.strip()
+        if len(ban_reason) < 3:
+            bot.send_message(chat_id=chat_id, text="❌ سبب الحظر قصير جداً (يجب أن يكون 3 أحرف على الأقل)")
+            return
+        
+        # حفظ سبب الحظر
+        device_name = context.user_data.get('ban_device')
+        ban_type = context.user_data.get('ban_type')
+        
+        context.user_data['ban_reason'] = ban_reason
+        context.user_data.pop('waiting_for_ban_reason', None)
+        
+        # الآن نطلب المدة حسب نوع الحظر
+        if ban_type == "permanent":
+            # حظر دائم - ننفذ الحظر فوراً
+            c.execute("SELECT username FROM approvals WHERE device_name = ? ORDER BY timestamp DESC LIMIT 1", (device_name,))
+            row = c.fetchone()
+            username = row[0] if row else "Unknown"
+            
+            ban_device(device_name, username, "permanent", 0, ban_reason)
+            
+            bot.send_message(
+                chat_id=chat_id,
+                text=f"✅ **تم حظر الجهاز بنجاح!**\n\n📱 {device_name}\n🔒 حظر دائم\n📝 السبب: {ban_reason}",
+                parse_mode=telegram.ParseMode.MARKDOWN
+            )
+            
+            context.user_data.pop('ban_device', None)
+            context.user_data.pop('ban_type', None)
+            context.user_data.pop('ban_reason', None)
+            send_main_menu(chat_id)
+            return
+        else:
+            # حظر مؤقت - نطلب المدة
+            if ban_type == "minutes":
+                bot.send_message(
+                    chat_id=chat_id,
+                    text=f"🔒 **حظر جهاز:** `{device_name}`\n📝 السبب: {ban_reason}\n\n⏰ **أدخل عدد الدقائق (1-59):**",
+                    parse_mode=telegram.ParseMode.MARKDOWN
+                )
+            elif ban_type == "hours":
+                bot.send_message(
+                    chat_id=chat_id,
+                    text=f"🔒 **حظر جهاز:** `{device_name}`\n📝 السبب: {ban_reason}\n\n🕐 **أدخل عدد الساعات (1-23):**",
+                    parse_mode=telegram.ParseMode.MARKDOWN
+                )
+            elif ban_type == "days":
+                bot.send_message(
+                    chat_id=chat_id,
+                    text=f"🔒 **حظر جهاز:** `{device_name}`\n📝 السبب: {ban_reason}\n\n📅 **أدخل عدد الأيام (1-365):**",
+                    parse_mode=telegram.ParseMode.MARKDOWN
+                )
+            context.user_data['waiting_for_ban_duration'] = True
+        return
+    
+    # ========== معالجة إدخال مدة الحظر (بعد كتابة السبب) ==========
     if context.user_data.get('waiting_for_ban_duration'):
         try:
             duration = int(text)
             ban_type = context.user_data.get('ban_type')
             device_name = context.user_data.get('ban_device')
+            ban_reason = context.user_data.get('ban_reason', 'تم حظر الجهاز من قبل المطور')
             
+            # التحقق من صحة المدة
             if ban_type == "minutes" and (duration < 1 or duration > 59):
                 bot.send_message(chat_id=chat_id, text="❌ عدد الدقائق يجب أن يكون بين 1 و 59")
                 context.user_data.pop('waiting_for_ban_duration', None)
                 context.user_data.pop('ban_device', None)
                 context.user_data.pop('ban_type', None)
+                context.user_data.pop('ban_reason', None)
                 send_main_menu(chat_id)
                 return
             elif ban_type == "hours" and (duration < 1 or duration > 23):
@@ -1496,6 +1553,7 @@ def handle_message(update, context):
                 context.user_data.pop('waiting_for_ban_duration', None)
                 context.user_data.pop('ban_device', None)
                 context.user_data.pop('ban_type', None)
+                context.user_data.pop('ban_reason', None)
                 send_main_menu(chat_id)
                 return
             elif ban_type == "days" and (duration < 1 or duration > 365):
@@ -1503,6 +1561,7 @@ def handle_message(update, context):
                 context.user_data.pop('waiting_for_ban_duration', None)
                 context.user_data.pop('ban_device', None)
                 context.user_data.pop('ban_type', None)
+                context.user_data.pop('ban_reason', None)
                 send_main_menu(chat_id)
                 return
             
@@ -1510,22 +1569,27 @@ def handle_message(update, context):
             row = c.fetchone()
             username = row[0] if row else "Unknown"
             
+            # إنشاء نص السبب مع المدة
             if ban_type == "minutes":
-                ban_device(device_name, username, "minutes", duration, f"حظر لمدة {duration} دقيقة")
+                full_reason = f"{ban_reason} (حظر لمدة {duration} دقيقة)"
+                ban_device(device_name, username, "minutes", duration, full_reason)
                 time_text = f"{duration} دقيقة"
             elif ban_type == "hours":
-                ban_device(device_name, username, "hours", duration, f"حظر لمدة {duration} ساعة")
+                full_reason = f"{ban_reason} (حظر لمدة {duration} ساعة)"
+                ban_device(device_name, username, "hours", duration, full_reason)
                 time_text = f"{duration} ساعة"
             elif ban_type == "days":
-                ban_device(device_name, username, "days", duration, f"حظر لمدة {duration} يوم")
+                full_reason = f"{ban_reason} (حظر لمدة {duration} يوم)"
+                ban_device(device_name, username, "days", duration, full_reason)
                 time_text = f"{duration} يوم"
             else:
-                ban_device(device_name, username, "permanent", 0, "حظر دائم")
+                full_reason = ban_reason
+                ban_device(device_name, username, "permanent", 0, full_reason)
                 time_text = "دائم"
             
             bot.send_message(
                 chat_id=chat_id,
-                text=f"✅ **تم حظر الجهاز بنجاح!**\n\n📱 {device_name}\n⏰ مدة الحظر: {time_text}",
+                text=f"✅ **تم حظر الجهاز بنجاح!**\n\n📱 {device_name}\n⏰ المدة: {time_text}\n📝 السبب: {ban_reason}",
                 parse_mode=telegram.ParseMode.MARKDOWN
             )
             
@@ -1535,6 +1599,7 @@ def handle_message(update, context):
         context.user_data.pop('waiting_for_ban_duration', None)
         context.user_data.pop('ban_device', None)
         context.user_data.pop('ban_type', None)
+        context.user_data.pop('ban_reason', None)
         send_main_menu(chat_id)
         return
     
@@ -1798,6 +1863,7 @@ def request_access():
                 "ban_type": ban_info['ban_type'],
                 "reason": ban_info['reason'],
                 "remaining": ban_info['remaining'],
+                "remaining_seconds": ban_info.get('remaining_seconds', 0),
                 "remaining_text": ban_info.get('remaining_text', '')
             })
         
@@ -2007,6 +2073,7 @@ def check_device_status():
                 "ban_type": ban_info['ban_type'],
                 "reason": ban_info['reason'],
                 "remaining": ban_info['remaining'],
+                "remaining_seconds": ban_info.get('remaining_seconds', 0),
                 "remaining_text": ban_info.get('remaining_text', '')
             })
         return jsonify({"banned": False})
