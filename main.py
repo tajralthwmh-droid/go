@@ -423,18 +423,18 @@ def show_users_management_menu(chat_id, message_id=None):
     users = get_authorized_users()
     master_id = MASTER_ADMIN_ID
     
-    text = f"👥 **إدارة المستخدمين المصرح لهم**\n\n"
-    text += f"👑 **المالك الأساسي:** `{master_id}` (لا يمكن حذفه)\n\n"
-    text += f"📋 **قائمة المستخدمين المصرح لهم:**\n"
+    text = "👥 إدارة المستخدمين المصرح لهم\n\n"
+    text += f"👑 المالك الأساسي: {master_id} (لا يمكن حذفه)\n\n"
+    text += "📋 قائمة المستخدمين المصرح لهم:\n"
     
     if users:
         for user in users:
             user_id, username, added_by, added_at, can_remove = user
             added_time = datetime.fromtimestamp(added_at).strftime('%Y-%m-%d %H:%M')
             if user_id == master_id:
-                text += f"👑 `{user_id}` - {username} - مالك\n"
+                text += f"👑 {user_id} - {username} - مالك\n"
             else:
-                text += f"👤 `{user_id}` - {username} - أضيف بواسطة: {added_by} - {added_time}\n"
+                text += f"👤 {user_id} - {username} - أضيف بواسطة: {added_by} - {added_time}\n"
     else:
         text += "لا يوجد مستخدمين غير المالك\n"
     
@@ -449,14 +449,12 @@ def show_users_management_menu(chat_id, message_id=None):
             chat_id=chat_id,
             message_id=message_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     else:
         bot.send_message(
             chat_id=chat_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
@@ -492,21 +490,19 @@ def show_remove_user_list(chat_id, message_id=None):
         keyboard.append([InlineKeyboardButton(f"❌ {user_id} - {username}", callback_data=f"remove_user_{user_id}")])
     
     keyboard.append([InlineKeyboardButton("🔙 العودة", callback_data="menu_users_management")])
-    text = "❌ **اختر المستخدم لحذفه:**\n\n⚠️ ملاحظة: لا يمكن حذف المالك الأساسي"
+    text = "❌ اختر المستخدم لحذفه:\n\n⚠️ ملاحظة: لا يمكن حذف المالك الأساسي"
     
     if message_id:
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     else:
         bot.send_message(
             chat_id=chat_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
@@ -521,15 +517,15 @@ def send_approval_request(request_id, app_name="Tomb", username="Unknown",
     message_text = f"""
 {custom_logo}
 
-🔐 *{welcome_msg}*
+🔐 {welcome_msg}
 
-👤 *المستخدم:* `{username}`
-📱 *الجهاز:* `{device_name}`
-ℹ️ *المعلومات:* `{device_info}`
-🌐 *IP:* `{ip_address}`
-🕐 *الوقت:* `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`
+👤 المستخدم: {username}
+📱 الجهاز: {device_name}
+ℹ️ المعلومات: {device_info}
+🌐 IP: {ip_address}
+🕐 الوقت: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-⚠️ *هل تسمح بالدخول؟*
+⚠️ هل تسمح بالدخول؟
 """
     
     keyboard = [
@@ -552,7 +548,6 @@ def send_approval_request(request_id, app_name="Tomb", username="Unknown",
             bot.send_message(
                 chat_id=user_id,
                 text=message_text,
-                parse_mode=telegram.ParseMode.MARKDOWN,
                 reply_markup=reply_markup
             )
         except Exception as e:
@@ -588,21 +583,19 @@ def show_pending_requests_with_buttons(chat_id, message_id=None):
             ])
         keyboard.append([InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")])
         
-        text_msg = "⏳ **الطلبات المعلقة:**\n\nاختر الطلب للموافقة أو الرفض:"
+        text_msg = "⏳ الطلبات المعلقة:\n\nاختر الطلب للموافقة أو الرفض:"
         
         if message_id:
             bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=message_id,
                 text=text_msg,
-                parse_mode=telegram.ParseMode.MARKDOWN,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         else:
             bot.send_message(
                 chat_id=chat_id,
                 text=text_msg,
-                parse_mode=telegram.ParseMode.MARKDOWN,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
     else:
@@ -666,21 +659,19 @@ def show_device_list_for_ban(chat_id, message_id=None):
         return
     
     keyboard.append([InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")])
-    text = "🔒 **اختر الجهاز المراد حظره:**\n\n"
+    text = "🔒 اختر الجهاز المراد حظره:\n\n"
     
     if message_id:
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     else:
         bot.send_message(
             chat_id=chat_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
@@ -723,21 +714,19 @@ def show_device_list_for_unban(chat_id, message_id=None):
         keyboard.append([InlineKeyboardButton(f"📱 {device_name} (👤 {username}) - {ban_info}", callback_data=f"select_unban_{device_name}")])
     
     keyboard.append([InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")])
-    text = "🔓 **اختر الجهاز لرفع الحظر عنه:**\n\n"
+    text = "🔓 اختر الجهاز لرفع الحظر عنه:\n\n"
     
     if message_id:
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     else:
         bot.send_message(
             chat_id=chat_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
@@ -768,21 +757,19 @@ def show_device_list_for_logout(chat_id, message_id=None):
         keyboard.append([InlineKeyboardButton(f"📱 {device_name} (👤 {username}) - {last_active_str}", callback_data=f"force_logout_{device_name}")])
     
     keyboard.append([InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")])
-    text = "🚪 **اختر الجهاز لتسجيل خروجه:**\n\n"
+    text = "🚪 اختر الجهاز لتسجيل خروجه:\n\n"
     
     if message_id:
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     else:
         bot.send_message(
             chat_id=chat_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
@@ -795,21 +782,19 @@ def show_ban_type_menu(chat_id, device_name, username, message_id=None):
         [InlineKeyboardButton("🔙 إلغاء", callback_data="menu_ban_device_list")]
     ]
     
-    text = f"🔒 **حظر جهاز:** `{device_name}`\n👤 **المستخدم:** {username}\n\nاختر نوع الحظر:"
+    text = f"🔒 حظر جهاز: {device_name}\n👤 المستخدم: {username}\n\nاختر نوع الحظر:"
     
     if message_id:
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     else:
         bot.send_message(
             chat_id=chat_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
@@ -822,21 +807,19 @@ def show_clear_requests_menu(chat_id, message_id=None):
         [InlineKeyboardButton("🔙 العودة", callback_data="back_to_main")]
     ]
     
-    text = "🗑️ **مسح الطلبات**\n\nاختر نوع الطلبات التي تريد مسحها:"
+    text = "🗑️ مسح الطلبات\n\nاختر نوع الطلبات التي تريد مسحها:"
     
     if message_id:
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     else:
         bot.send_message(
             chat_id=chat_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
@@ -848,21 +831,19 @@ def show_temp_password_menu(chat_id, message_id=None):
         [InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]
     ]
     
-    text = "🔑 **كلمات المرور المؤقتة**\n\nاختر نوع كلمة المرور:\n\n• **جهاز محدد:** كلمة مرور لجهاز واحد فقط\n• **جميع الأجهزة:** كلمة مرور واحدة صالحة لجميع الأجهزة النشطة\n\n⚠️ جميع كلمات المرور مؤقتة وتنتهي بعد المدة التي تحددها."
+    text = "🔑 كلمات المرور المؤقتة\n\nاختر نوع كلمة المرور:\n\n• جهاز محدد: كلمة مرور لجهاز واحد فقط\n• جميع الأجهزة: كلمة مرور واحدة صالحة لجميع الأجهزة النشطة\n\n⚠️ جميع كلمات المرور مؤقتة وتنتهي بعد المدة التي تحددها."
     
     if message_id:
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     else:
         bot.send_message(
             chat_id=chat_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
@@ -877,23 +858,21 @@ def show_temp_password_duration_menu(chat_id, device_name, username, message_id=
     ]
     
     if is_all_devices:
-        text = f"🔑 **كلمة مرور مؤقتة لجميع الأجهزة**\n\nاختر وحدة المدة:"
+        text = f"🔑 كلمة مرور مؤقتة لجميع الأجهزة\n\nاختر وحدة المدة:"
     else:
-        text = f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n👤 **المستخدم:** {username}\n\nاختر وحدة المدة:"
+        text = f"🔑 كلمة مرور مؤقتة لجهاز: {device_name}\n👤 المستخدم: {username}\n\nاختر وحدة المدة:"
     
     if message_id:
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     else:
         bot.send_message(
             chat_id=chat_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
@@ -955,21 +934,19 @@ def show_send_notification_menu(chat_id, message_id=None):
         [InlineKeyboardButton("🔙 العودة للإعدادات", callback_data="menu_settings")]
     ]
     
-    text = "📢 **إرسال إشعارات**\n\nيمكنك إرسال إشعار لجهاز محدد أو لجميع الأجهزة النشطة."
+    text = "📢 إرسال إشعارات\n\nيمكنك إرسال إشعار لجهاز محدد أو لجميع الأجهزة النشطة."
     
     if message_id:
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     else:
         bot.send_message(
             chat_id=chat_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
@@ -1000,52 +977,48 @@ def show_devices_for_notification(chat_id, message_id=None):
         keyboard.append([InlineKeyboardButton(f"📱 {device_name} (👤 {username})", callback_data=f"notify_device_{device_name}")])
     
     keyboard.append([InlineKeyboardButton("🔙 العودة", callback_data="menu_send_notification")])
-    text = "📢 **اختر الجهاز لإرسال إشعار له:**\n\n"
+    text = "📢 اختر الجهاز لإرسال إشعار له:\n\n"
     
     if message_id:
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     else:
         bot.send_message(
             chat_id=chat_id,
             text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
 def show_welcome_template_menu(chat_id, message_id=None):
     current_template = get_setting("welcome_message_template", "مرحباً بك يا & في تطبيق tomb of Makrotik")
     
-    text = f"""💬 **تغيير رسالة الترحيب**
+    text = f"""💬 تغيير رسالة الترحيب
 
-📝 **الرسالة الحالية:**
-`{current_template}`
+📝 الرسالة الحالية:
+{current_template}
 
-💡 **ملاحظة:** استخدم الرمز `&` لوضع اسم المستخدم تلقائياً.
+💡 ملاحظة: استخدم الرمز & لوضع اسم المستخدم تلقائياً.
 
-**أمثلة:**
-• `مرحباً بك يا & في تطبيق TOMB`
-• `حبيبي يا & في tomb of Makrotik`
+أمثلة:
+• مرحباً بك يا & في تطبيق TOMB
+• حبيبي يا & في tomb of Makrotik
 
-📤 **أرسل رسالة الترحيب الجديدة الآن:**"""
+📤 أرسل رسالة الترحيب الجديدة الآن:"""
     
     if message_id:
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
-            text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN
+            text=text
         )
     else:
         bot.send_message(
             chat_id=chat_id,
-            text=text,
-            parse_mode=telegram.ParseMode.MARKDOWN
+            text=text
         )
 
 # متغير سياق مؤقت
@@ -1071,8 +1044,7 @@ def handle_callback(update, context):
     
     if data == "add_new_user":
         query.edit_message_text(
-            "➕ **إضافة مستخدم جديد**\n\nأرسل معرف المستخدم (ID) الخاص بالشخص الذي تريد إضافته:\n\nمثال: `123456789`\n\n⚠️ يمكنك الحصول على ID المستخدم من بوت @userinfobot",
-            parse_mode=telegram.ParseMode.MARKDOWN
+            "➕ إضافة مستخدم جديد\n\nأرسل معرف المستخدم (ID) الخاص بالشخص الذي تريد إضافته:\n\nمثال: 123456789\n\n⚠️ يمكنك الحصول على ID المستخدم من بوت @userinfobot"
         )
         context.user_data['waiting_for_new_user_id'] = True
         return
@@ -1084,9 +1056,9 @@ def handle_callback(update, context):
     if data.startswith("remove_user_"):
         user_to_remove = data[12:]
         if remove_authorized_user(user_to_remove):
-            query.edit_message_text(f"✅ تم حذف المستخدم `{user_to_remove}` بنجاح", parse_mode=telegram.ParseMode.MARKDOWN)
+            query.edit_message_text(f"✅ تم حذف المستخدم {user_to_remove} بنجاح")
         else:
-            query.edit_message_text("❌ لا يمكن حذف المالك الأساسي للبوت", parse_mode=telegram.ParseMode.MARKDOWN)
+            query.edit_message_text("❌ لا يمكن حذف المالك الأساسي للبوت")
         show_users_management_menu(chat_id)
         return
     
@@ -1103,8 +1075,7 @@ def handle_callback(update, context):
         
         keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
         query.edit_message_text(
-            text=f"✅ **تم تسجيل خروج الجهاز بنجاح!**\n\n📱 {device_name}\n\nسيتم إرجاع المستخدم إلى شاشة تسجيل الدخول.",
-            parse_mode=telegram.ParseMode.MARKDOWN,
+            text=f"✅ تم تسجيل خروج الجهاز بنجاح!\n\n📱 {device_name}\n\nسيتم إرجاع المستخدم إلى شاشة تسجيل الدخول.",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
@@ -1130,8 +1101,7 @@ def handle_callback(update, context):
         context.user_data['ban_type'] = "minutes"
         context.user_data['ban_unit'] = "minutes"
         query.edit_message_text(
-            text=f"🔒 **حظر جهاز:** `{device_name}`\n\n📝 **أرسل سبب الحظر أولاً:**\n(سيُطلب منك بعدها إدخال عدد الدقائق)",
-            parse_mode=telegram.ParseMode.MARKDOWN
+            text=f"🔒 حظر جهاز: {device_name}\n\n📝 أرسل سبب الحظر أولاً:\n(سيُطلب منك بعدها إدخال عدد الدقائق)"
         )
         context.user_data['waiting_for_ban_reason'] = True
         return
@@ -1142,8 +1112,7 @@ def handle_callback(update, context):
         context.user_data['ban_type'] = "hours"
         context.user_data['ban_unit'] = "hours"
         query.edit_message_text(
-            text=f"🔒 **حظر جهاز:** `{device_name}`\n\n📝 **أرسل سبب الحظر أولاً:**\n(سيُطلب منك بعدها إدخال عدد الساعات)",
-            parse_mode=telegram.ParseMode.MARKDOWN
+            text=f"🔒 حظر جهاز: {device_name}\n\n📝 أرسل سبب الحظر أولاً:\n(سيُطلب منك بعدها إدخال عدد الساعات)"
         )
         context.user_data['waiting_for_ban_reason'] = True
         return
@@ -1154,8 +1123,7 @@ def handle_callback(update, context):
         context.user_data['ban_type'] = "days"
         context.user_data['ban_unit'] = "days"
         query.edit_message_text(
-            text=f"🔒 **حظر جهاز:** `{device_name}`\n\n📝 **أرسل سبب الحظر أولاً:**\n(سيُطلب منك بعدها إدخال عدد الأيام)",
-            parse_mode=telegram.ParseMode.MARKDOWN
+            text=f"🔒 حظر جهاز: {device_name}\n\n📝 أرسل سبب الحظر أولاً:\n(سيُطلب منك بعدها إدخال عدد الأيام)"
         )
         context.user_data['waiting_for_ban_reason'] = True
         return
@@ -1167,8 +1135,7 @@ def handle_callback(update, context):
         context.user_data['ban_type'] = "permanent"
         context.user_data['ban_unit'] = "permanent"
         query.edit_message_text(
-            text=f"🔒 **حظر دائم لجهاز:** `{device_name}`\n\n📝 **أرسل سبب الحظر:**",
-            parse_mode=telegram.ParseMode.MARKDOWN
+            text=f"🔒 حظر دائم لجهاز: {device_name}\n\n📝 أرسل سبب الحظر:"
         )
         context.user_data['waiting_for_ban_reason'] = True
         return
@@ -1180,8 +1147,7 @@ def handle_callback(update, context):
         
         keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
         query.edit_message_text(
-            text=f"✅ **تم رفع الحظر عن الجهاز بنجاح!**\n\n📱 {device_name}",
-            parse_mode=telegram.ParseMode.MARKDOWN,
+            text=f"✅ تم رفع الحظر عن الجهاز بنجاح!\n\n📱 {device_name}",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
@@ -1237,8 +1203,7 @@ def handle_callback(update, context):
         keyboard.append([InlineKeyboardButton("🔙 العودة", callback_data="menu_temp_password")])
         
         query.edit_message_text(
-            "🔑 **اختر الجهاز لإنشاء كلمة مرور مؤقتة له:**\n\nبعد الاختيار ستختار مدة الصلاحية (دقائق/ساعات/أيام)",
-            parse_mode=telegram.ParseMode.MARKDOWN,
+            "🔑 اختر الجهاز لإنشاء كلمة مرور مؤقتة له:\n\nبعد الاختيار ستختار مدة الصلاحية (دقائق/ساعات/أيام)",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
@@ -1261,8 +1226,7 @@ def handle_callback(update, context):
         context.user_data['temp_unit'] = "minutes"
         context.user_data['temp_all_devices'] = False
         query.edit_message_text(
-            text=f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n\n⏰ أدخل عدد الدقائق (1-59):",
-            parse_mode=telegram.ParseMode.MARKDOWN
+            text=f"🔑 كلمة مرور مؤقتة لجهاز: {device_name}\n\n⏰ أدخل عدد الدقائق (1-59):"
         )
         context.user_data['waiting_for_temp_duration'] = True
         return
@@ -1273,8 +1237,7 @@ def handle_callback(update, context):
         context.user_data['temp_unit'] = "hours"
         context.user_data['temp_all_devices'] = False
         query.edit_message_text(
-            text=f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n\n🕐 أدخل عدد الساعات (1-23):",
-            parse_mode=telegram.ParseMode.MARKDOWN
+            text=f"🔑 كلمة مرور مؤقتة لجهاز: {device_name}\n\n🕐 أدخل عدد الساعات (1-23):"
         )
         context.user_data['waiting_for_temp_duration'] = True
         return
@@ -1285,8 +1248,7 @@ def handle_callback(update, context):
         context.user_data['temp_unit'] = "days"
         context.user_data['temp_all_devices'] = False
         query.edit_message_text(
-            text=f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n\n📅 أدخل عدد الأيام (1-365):",
-            parse_mode=telegram.ParseMode.MARKDOWN
+            text=f"🔑 كلمة مرور مؤقتة لجهاز: {device_name}\n\n📅 أدخل عدد الأيام (1-365):"
         )
         context.user_data['waiting_for_temp_duration'] = True
         return
@@ -1297,8 +1259,7 @@ def handle_callback(update, context):
         context.user_data['temp_unit'] = "minutes"
         context.user_data['temp_all_devices'] = True
         query.edit_message_text(
-            text=f"🔑 **كلمة مرور مؤقتة لجميع الأجهزة**\n\n⏰ أدخل عدد الدقائق (1-59):",
-            parse_mode=telegram.ParseMode.MARKDOWN
+            text=f"🔑 كلمة مرور مؤقتة لجميع الأجهزة\n\n⏰ أدخل عدد الدقائق (1-59):"
         )
         context.user_data['waiting_for_temp_duration'] = True
         return
@@ -1309,8 +1270,7 @@ def handle_callback(update, context):
         context.user_data['temp_unit'] = "hours"
         context.user_data['temp_all_devices'] = True
         query.edit_message_text(
-            text=f"🔑 **كلمة مرور مؤقتة لجميع الأجهزة**\n\n🕐 أدخل عدد الساعات (1-23):",
-            parse_mode=telegram.ParseMode.MARKDOWN
+            text=f"🔑 كلمة مرور مؤقتة لجميع الأجهزة\n\n🕐 أدخل عدد الساعات (1-23):"
         )
         context.user_data['waiting_for_temp_duration'] = True
         return
@@ -1321,8 +1281,7 @@ def handle_callback(update, context):
         context.user_data['temp_unit'] = "days"
         context.user_data['temp_all_devices'] = True
         query.edit_message_text(
-            text=f"🔑 **كلمة مرور مؤقتة لجميع الأجهزة**\n\n📅 أدخل عدد الأيام (1-365):",
-            parse_mode=telegram.ParseMode.MARKDOWN
+            text=f"🔑 كلمة مرور مؤقتة لجميع الأجهزة\n\n📅 أدخل عدد الأيام (1-365):"
         )
         context.user_data['waiting_for_temp_duration'] = True
         return
@@ -1339,8 +1298,7 @@ def handle_callback(update, context):
     if data == "notify_all_devices":
         context.user_data['waiting_for_broadcast_message'] = True
         query.edit_message_text(
-            text="📢 **إرسال إشعار للجميع**\n\n📝 أرسل نص الإشعار الآن:",
-            parse_mode=telegram.ParseMode.MARKDOWN
+            text="📢 إرسال إشعار للجميع\n\n📝 أرسل نص الإشعار الآن:"
         )
         return
     
@@ -1349,8 +1307,7 @@ def handle_callback(update, context):
         context.user_data['notify_device'] = device_name
         context.user_data['waiting_for_notification_message'] = True
         query.edit_message_text(
-            text=f"📢 **إرسال إشعار للجهاز:** `{device_name}`\n\n📝 أرسل نص الإشعار الآن:",
-            parse_mode=telegram.ParseMode.MARKDOWN
+            text=f"📢 إرسال إشعار للجهاز: {device_name}\n\n📝 أرسل نص الإشعار الآن:"
         )
         return
     
@@ -1371,23 +1328,22 @@ def handle_callback(update, context):
     if data == "menu_stats":
         stats = get_access_stats()
         text_msg = f"""
-📊 *إحصائيات النظام*
+📊 إحصائيات النظام
 
-📝 *إجمالي الطلبات:* {stats['total']}
-⏳ *قيد الانتظار:* {stats['pending']}
-✅ *تمت الموافقة:* {stats['approved']}
-❌ *تم الرفض:* {stats['denied']}
-🚫 *الأجهزة المحظورة:* {stats['banned']}
-📱 *الأجهزة النشطة:* {stats['active']}
-✅ *الأجهزة المعتمدة:* {stats['approved_devices']}
-👥 *المستخدمين المصرح لهم:* {stats['authorized_users']}
+📝 إجمالي الطلبات: {stats['total']}
+⏳ قيد الانتظار: {stats['pending']}
+✅ تمت الموافقة: {stats['approved']}
+❌ تم الرفض: {stats['denied']}
+🚫 الأجهزة المحظورة: {stats['banned']}
+📱 الأجهزة النشطة: {stats['active']}
+✅ الأجهزة المعتمدة: {stats['approved_devices']}
+👥 المستخدمين المصرح لهم: {stats['authorized_users']}
 
-🔄 *آخر تحديث:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+🔄 آخر تحديث: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
         keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
         query.edit_message_text(
             text=text_msg,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
@@ -1398,14 +1354,13 @@ def handle_callback(update, context):
         ).fetchall()
         
         if approved_devices:
-            text_msg = "✅ *الأجهزة المعتمدة:*\n\n"
+            text_msg = "✅ الأجهزة المعتمدة:\n\n"
             for device in approved_devices:
                 time_str = datetime.fromtimestamp(device[2]).strftime('%Y-%m-%d %H:%M')
                 text_msg += f"👤 {device[0]} - 📱 {device[1]} - {time_str}\n"
             keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
             query.edit_message_text(
                 text=text_msg,
-                parse_mode=telegram.ParseMode.MARKDOWN,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         else:
@@ -1422,14 +1377,13 @@ def handle_callback(update, context):
         ).fetchall()
         
         if denied_reqs:
-            text_msg = "❌ *الطلبات المرفوضة:*\n\n"
+            text_msg = "❌ الطلبات المرفوضة:\n\n"
             for req in denied_reqs:
                 time_str = datetime.fromtimestamp(req[2]).strftime('%Y-%m-%d %H:%M')
                 text_msg += f"👤 {req[0]} - {req[1]} - {time_str}\n"
             keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
             query.edit_message_text(
                 text=text_msg,
-                parse_mode=telegram.ParseMode.MARKDOWN,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         else:
@@ -1446,7 +1400,7 @@ def handle_callback(update, context):
         ).fetchall()
         
         if logs:
-            log_text = "📋 *سجل الدخول الأخير:*\n\n"
+            log_text = "📋 سجل الدخول الأخير:\n\n"
             for log in logs:
                 time_str = datetime.fromtimestamp(log[3]).strftime('%Y-%m-%d %H:%M')
                 emoji = "✅" if log[2] == "approved" else "❌" if log[2] == "denied" else "📱" if log[2] == "app_opened" else "⏳"
@@ -1454,7 +1408,6 @@ def handle_callback(update, context):
             keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
             query.edit_message_text(
                 text=log_text,
-                parse_mode=telegram.ParseMode.MARKDOWN,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         else:
@@ -1469,11 +1422,11 @@ def handle_callback(update, context):
         devices = get_active_devices()
         
         if devices:
-            text_msg = "📱 *الأجهزة النشطة:*\n\n"
+            text_msg = "📱 الأجهزة النشطة:\n\n"
             for dev in devices:
                 device_name, username, device_info, last_active, first_active, total_requests = dev
                 last_active_str = datetime.fromtimestamp(last_active).strftime('%Y-%m-%d %H:%M')
-                text_msg += f"📱 **{device_name}**\n   👤 {username}\n   🕐 آخر ظهور: {last_active_str}\n   📊 عدد الطلبات: {total_requests}\n\n"
+                text_msg += f"📱 {device_name}\n   👤 {username}\n   🕐 آخر ظهور: {last_active_str}\n   📊 عدد الطلبات: {total_requests}\n\n"
             keyboard = [
                 [InlineKeyboardButton("🔒 حظر جهاز", callback_data="menu_ban_device_list")],
                 [InlineKeyboardButton("🚪 تسجيل خروج", callback_data="menu_force_logout")],
@@ -1481,7 +1434,6 @@ def handle_callback(update, context):
             ]
             query.edit_message_text(
                 text=text_msg,
-                parse_mode=telegram.ParseMode.MARKDOWN,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         else:
@@ -1496,7 +1448,7 @@ def handle_callback(update, context):
         devices = get_banned_devices()
         
         if devices:
-            text_msg = "🚫 *الأجهزة المحظورة:*\n\n"
+            text_msg = "🚫 الأجهزة المحظورة:\n\n"
             for dev in devices:
                 device_name, username, banned_at, banned_until, ban_type, reason = dev
                 banned_at_str = datetime.fromtimestamp(banned_at).strftime('%Y-%m-%d %H:%M')
@@ -1513,14 +1465,13 @@ def handle_callback(update, context):
                     expiry = f"⏰ متبقي {remaining} يوم"
                 else:
                     expiry = "🔒 محظور"
-                text_msg += f"📱 **{device_name}**\n   👤 {username}\n   🗓️ حظر في: {banned_at_str}\n   ⏱️ {expiry}\n   📝 السبب: {reason}\n\n"
+                text_msg += f"📱 {device_name}\n   👤 {username}\n   🗓️ حظر في: {banned_at_str}\n   ⏱️ {expiry}\n   📝 السبب: {reason}\n\n"
             keyboard = [
                 [InlineKeyboardButton("🔓 رفع حظر", callback_data="menu_unban_device_list")],
                 [InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]
             ]
             query.edit_message_text(
                 text=text_msg,
-                parse_mode=telegram.ParseMode.MARKDOWN,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         else:
@@ -1536,15 +1487,15 @@ def handle_callback(update, context):
         welcome_template = get_setting("welcome_message_template", "مرحباً بك يا & في تطبيق tomb of Makrotik")
         
         text_msg = f"""
-⚙️ *الإعدادات الحالية*
+⚙️ الإعدادات الحالية
 
-🏷️ *الشعار:* 
+🏷️ الشعار: 
 {logo[:50]}...
 
-💬 *رسالة الترحيب:* 
+💬 رسالة الترحيب: 
 {welcome_template[:50]}...
 
-🔑 *كلمة المرور:* {'●' * 8}
+🔑 كلمة المرور: {'●' * 8}
 """
         keyboard = [
             [InlineKeyboardButton("📢 إرسال إشعارات", callback_data="menu_send_notification")],
@@ -1555,15 +1506,13 @@ def handle_callback(update, context):
         ]
         query.edit_message_text(
             text=text_msg,
-            parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
     
     elif data == "change_password":
         query.edit_message_text(
-            "🔑 **تغيير كلمة المرور**\n\nأرسل كلمة المرور الجديدة (4 أحرف على الأقل):",
-            parse_mode=telegram.ParseMode.MARKDOWN
+            "🔑 تغيير كلمة المرور\n\nأرسل كلمة المرور الجديدة (4 أحرف على الأقل):"
         )
         context.user_data['waiting_for_new_password'] = True
         return
@@ -1598,8 +1547,7 @@ def handle_callback(update, context):
         
         try:
             query.edit_message_text(
-                text=f"✅ **تمت الموافقة بنجاح**\n\nتمت إضافة الجهاز إلى قائمة الأجهزة المعتمدة.\nيمكن للمستخدم الآن الدخول إلى التطبيق في أي وقت.\n\n{get_setting('custom_logo', CUSTOM_LOGO)}",
-                parse_mode=telegram.ParseMode.MARKDOWN
+                text=f"✅ تمت الموافقة بنجاح\n\nتمت إضافة الجهاز إلى قائمة الأجهزة المعتمدة.\nيمكن للمستخدم الآن الدخول إلى التطبيق في أي وقت.\n\n{get_setting('custom_logo', CUSTOM_LOGO)}"
             )
         except:
             pass
@@ -1624,8 +1572,7 @@ def handle_callback(update, context):
         
         try:
             query.edit_message_text(
-                text=f"❌ **تم رفض الطلب**\n\nلم يتم السماح للمستخدم بالدخول.\n\n{get_setting('custom_logo', CUSTOM_LOGO)}",
-                parse_mode=telegram.ParseMode.MARKDOWN
+                text=f"❌ تم رفض الطلب\n\nلم يتم السماح للمستخدم بالدخول.\n\n{get_setting('custom_logo', CUSTOM_LOGO)}"
             )
         except:
             pass
@@ -1648,18 +1595,17 @@ def handle_callback(update, context):
         
         if row:
             info_text = f"""
-📱 *معلومات الجهاز*
+📱 معلومات الجهاز
 
-👤 *المستخدم:* {row[0]}
-📱 *اسم الجهاز:* {row[1]}
-ℹ️ *تفاصيل:* {row[2]}
-🌐 *IP:* {row[3]}
-🕐 *الوقت:* {datetime.fromtimestamp(row[4]).strftime('%Y-%m-%d %H:%M:%S')}
+👤 المستخدم: {row[0]}
+📱 اسم الجهاز: {row[1]}
+ℹ️ تفاصيل: {row[2]}
+🌐 IP: {row[3]}
+🕐 الوقت: {datetime.fromtimestamp(row[4]).strftime('%Y-%m-%d %H:%M:%S')}
 """
             keyboard = [[InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main")]]
             query.edit_message_text(
                 text=info_text,
-                parse_mode=telegram.ParseMode.MARKDOWN,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         else:
@@ -1694,8 +1640,7 @@ def handle_message(update, context):
             if add_authorized_user(new_user_id, username, added_by):
                 bot.send_message(
                     chat_id=chat_id,
-                    text=f"✅ **تم إضافة المستخدم بنجاح!**\n\n🆔 المعرف: `{new_user_id}`\n👤 الاسم: {username}\n\nيمكن لهذا المستخدم الآن استخدام البوت.",
-                    parse_mode=telegram.ParseMode.MARKDOWN
+                    text=f"✅ تم إضافة المستخدم بنجاح!\n\n🆔 المعرف: {new_user_id}\n👤 الاسم: {username}\n\nيمكن لهذا المستخدم الآن استخدام البوت."
                 )
             else:
                 bot.send_message(chat_id=chat_id, text="❌ هذا المستخدم موجود بالفعل في القائمة")
@@ -1724,8 +1669,7 @@ def handle_message(update, context):
             ban_device(device_name, username, "permanent", 0, ban_reason)
             bot.send_message(
                 chat_id=chat_id,
-                text=f"✅ **تم حظر الجهاز بنجاح!**\n\n📱 {device_name}\n🔒 حظر دائم\n📝 السبب: {ban_reason}",
-                parse_mode=telegram.ParseMode.MARKDOWN
+                text=f"✅ تم حظر الجهاز بنجاح!\n\n📱 {device_name}\n🔒 حظر دائم\n📝 السبب: {ban_reason}"
             )
             context.user_data.pop('waiting_for_ban_reason', None)
             context.user_data.pop('ban_device', None)
@@ -1742,20 +1686,17 @@ def handle_message(update, context):
             if ban_unit == "minutes":
                 bot.send_message(
                     chat_id=chat_id,
-                    text=f"🔒 **حظر جهاز:** `{device_name}`\n📝 السبب: {ban_reason}\n\n⏰ أدخل عدد الدقائق (1-59):",
-                    parse_mode=telegram.ParseMode.MARKDOWN
+                    text=f"🔒 حظر جهاز: {device_name}\n📝 السبب: {ban_reason}\n\n⏰ أدخل عدد الدقائق (1-59):"
                 )
             elif ban_unit == "hours":
                 bot.send_message(
                     chat_id=chat_id,
-                    text=f"🔒 **حظر جهاز:** `{device_name}`\n📝 السبب: {ban_reason}\n\n🕐 أدخل عدد الساعات (1-23):",
-                    parse_mode=telegram.ParseMode.MARKDOWN
+                    text=f"🔒 حظر جهاز: {device_name}\n📝 السبب: {ban_reason}\n\n🕐 أدخل عدد الساعات (1-23):"
                 )
             elif ban_unit == "days":
                 bot.send_message(
                     chat_id=chat_id,
-                    text=f"🔒 **حظر جهاز:** `{device_name}`\n📝 السبب: {ban_reason}\n\n📅 أدخل عدد الأيام (1-365):",
-                    parse_mode=telegram.ParseMode.MARKDOWN
+                    text=f"🔒 حظر جهاز: {device_name}\n📝 السبب: {ban_reason}\n\n📅 أدخل عدد الأيام (1-365):"
                 )
         return
     
@@ -1811,8 +1752,7 @@ def handle_message(update, context):
             
             bot.send_message(
                 chat_id=chat_id,
-                text=f"✅ **تم حظر الجهاز بنجاح!**\n\n📱 {device_name}\n⏰ مدة الحظر: {time_text}\n📝 السبب: {ban_reason}",
-                parse_mode=telegram.ParseMode.MARKDOWN
+                text=f"✅ تم حظر الجهاز بنجاح!\n\n📱 {device_name}\n⏰ مدة الحظر: {time_text}\n📝 السبب: {ban_reason}"
             )
             
         except ValueError:
@@ -1847,14 +1787,12 @@ def handle_message(update, context):
                 if is_all_devices:
                     bot.send_message(
                         chat_id=chat_id,
-                        text=f"✅ **تم إنشاء كلمة مرور مؤقتة لجميع الأجهزة!**\n\n🔑 كلمة المرور: `{temp_password}`\n⏰ المدة: {time_text}\n\n⚠️ هذه الكلمة صالحة لجميع الأجهزة النشطة.\nبعد انتهاء المدة سيتم إرجاع جميع المستخدمين لشاشة تسجيل الدخول.",
-                        parse_mode=telegram.ParseMode.MARKDOWN
+                        text=f"✅ تم إنشاء كلمة مرور مؤقتة لجميع الأجهزة!\n\n🔑 كلمة المرور: {temp_password}\n⏰ المدة: {time_text}\n\n⚠️ هذه الكلمة صالحة لجميع الأجهزة النشطة.\nبعد انتهاء المدة سيتم إرجاع جميع المستخدمين لشاشة تسجيل الدخول."
                     )
                 else:
                     bot.send_message(
                         chat_id=chat_id,
-                        text=f"✅ **تم إنشاء كلمة مرور مؤقتة!**\n\n📱 الجهاز: `{device_name}`\n🔑 كلمة المرور: `{temp_password}`\n⏰ المدة: {time_text}\n\n⚠️ بعد انتهاء المدة سيتم إرجاع المستخدم لشاشة تسجيل الدخول.",
-                        parse_mode=telegram.ParseMode.MARKDOWN
+                        text=f"✅ تم إنشاء كلمة مرور مؤقتة!\n\n📱 الجهاز: {device_name}\n🔑 كلمة المرور: {temp_password}\n⏰ المدة: {time_text}\n\n⚠️ بعد انتهاء المدة سيتم إرجاع المستخدم لشاشة تسجيل الدخول."
                     )
         except ValueError:
             bot.send_message(chat_id=chat_id, text="❌ الرجاء إدخال رقم صحيح")
@@ -1878,8 +1816,7 @@ def handle_message(update, context):
         
         bot.send_message(
             chat_id=chat_id,
-            text=f"✅ **تم إرسال الإشعار بنجاح!**\n\n📱 الجهاز: `{device_name}`\n💬 الرسالة: {message_text}",
-            parse_mode=telegram.ParseMode.MARKDOWN
+            text=f"✅ تم إرسال الإشعار بنجاح!\n\n📱 الجهاز: {device_name}\n💬 الرسالة: {message_text}"
         )
         
         context.user_data.pop('waiting_for_notification_message', None)
@@ -1901,8 +1838,7 @@ def handle_message(update, context):
         
         bot.send_message(
             chat_id=chat_id,
-            text=f"✅ **تم إرسال الإشعار للجميع بنجاح!**\n\n💬 الرسالة: {message_text}\n📱 عدد الأجهزة: {len(devices)}",
-            parse_mode=telegram.ParseMode.MARKDOWN
+            text=f"✅ تم إرسال الإشعار للجميع بنجاح!\n\n💬 الرسالة: {message_text}\n📱 عدد الأجهزة: {len(devices)}"
         )
         
         context.user_data.pop('waiting_for_broadcast_message', None)
@@ -1916,14 +1852,12 @@ def handle_message(update, context):
             set_setting("welcome_message_template", new_template)
             bot.send_message(
                 chat_id=chat_id,
-                text=f"✅ **تم تغيير رسالة الترحيب بنجاح!**\n\nالرسالة الجديدة: `{new_template}`\n\n(سيتم استبدال & باسم المستخدم)",
-                parse_mode=telegram.ParseMode.MARKDOWN
+                text=f"✅ تم تغيير رسالة الترحيب بنجاح!\n\nالرسالة الجديدة: {new_template}\n\n(سيتم استبدال & باسم المستخدم)"
             )
         else:
             bot.send_message(
                 chat_id=chat_id,
-                text="❌ **الرسالة يجب أن تحتوي على الرمز `&`**\n\nمثال: `مرحباً بك يا & في تطبيق TOMB`",
-                parse_mode=telegram.ParseMode.MARKDOWN
+                text="❌ الرسالة يجب أن تحتوي على الرمز &\n\nمثال: مرحباً بك يا & في تطبيق TOMB"
             )
         context.user_data.pop('waiting_for_welcome_template')
         send_main_menu(chat_id)
@@ -1936,8 +1870,7 @@ def handle_message(update, context):
             if update_password(new_password, "bot"):
                 bot.send_message(
                     chat_id=chat_id,
-                    text=f"✅ تم تغيير كلمة مرور التطبيق بنجاح!\n\n🔑 كلمة المرور الجديدة: `{new_password}`\n\n⚠️ كلمة المرور الأساسية لا تنتهي أبداً",
-                    parse_mode=telegram.ParseMode.MARKDOWN
+                    text=f"✅ تم تغيير كلمة مرور التطبيق بنجاح!\n\n🔑 كلمة المرور الجديدة: {new_password}\n\n⚠️ كلمة المرور الأساسية لا تنتهي أبداً"
                 )
             else:
                 bot.send_message(chat_id=chat_id, text="❌ فشل في تغيير كلمة المرور")
@@ -2278,12 +2211,12 @@ def notify_app_opened():
             update_device_last_login(device_name)
         
         message = f"""
-📱 *جهاز فتح التطبيق* 📱
+📱 جهاز فتح التطبيق 📱
 
-📱 *الجهاز:* `{device_name}`
-ℹ️ *المعلومات:* `{device_info}`
-🌐 *IP:* `{ip_address}`
-🕐 *الوقت:* `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`
+📱 الجهاز: {device_name}
+ℹ️ المعلومات: {device_info}
+🌐 IP: {ip_address}
+🕐 الوقت: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 ✅ هذا مجرد إشعار بفتح التطبيق، ليس طلب موافقة
 """
@@ -2291,7 +2224,7 @@ def notify_app_opened():
         users = get_authorized_users()
         for user in users:
             try:
-                bot.send_message(chat_id=user[0], text=message, parse_mode=telegram.ParseMode.MARKDOWN)
+                bot.send_message(chat_id=user[0], text=message)
             except:
                 pass
         
