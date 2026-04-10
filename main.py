@@ -37,7 +37,7 @@ c.execute('''CREATE TABLE IF NOT EXISTS settings
              (key TEXT PRIMARY KEY, 
               value TEXT)''')
 
-# جدول كلمات المرور (الرئيسية)
+# جدول كلمات المرور (الرئيسية) - لا تنتهي أبداً
 c.execute('''CREATE TABLE IF NOT EXISTS passwords
              (id INTEGER PRIMARY KEY AUTOINCREMENT,
               password_hash TEXT,
@@ -71,7 +71,7 @@ c.execute('''CREATE TABLE IF NOT EXISTS active_devices
               first_active INTEGER,
               total_requests INTEGER DEFAULT 1)''')
 
-# جدول كلمات المرور المؤقتة
+# جدول كلمات المرور المؤقتة (تنتهي)
 c.execute('''CREATE TABLE IF NOT EXISTS temp_passwords
              (id INTEGER PRIMARY KEY AUTOINCREMENT,
               password_hash TEXT,
@@ -88,7 +88,7 @@ c.execute('''CREATE TABLE IF NOT EXISTS active_sessions
               session_type TEXT,
               created_at INTEGER)''')
 
-# جدول الأجهزة المعتمدة (للدخول الدائم)
+# جدول الأجهزة المعتمدة (للدخول الدائم - لا تنتهي أبداً)
 c.execute('''CREATE TABLE IF NOT EXISTS approved_devices
              (device_name TEXT PRIMARY KEY,
               username TEXT,
@@ -96,11 +96,10 @@ c.execute('''CREATE TABLE IF NOT EXISTS approved_devices
               last_login INTEGER,
               approved_by TEXT)''')
 
-# جدول الإشعارات
+# جدول الإشعارات - بدون عنوان (message فقط)
 c.execute('''CREATE TABLE IF NOT EXISTS notifications
              (id INTEGER PRIMARY KEY AUTOINCREMENT,
               device_name TEXT,
-              title TEXT,
               message TEXT,
               created_at INTEGER,
               is_read INTEGER DEFAULT 0)''')
@@ -120,6 +119,7 @@ def set_setting(key, value):
     conn.commit()
 
 def get_app_password():
+    """كلمة المرور الأساسية - لا تنتهي أبداً"""
     c.execute("SELECT password_hash FROM passwords ORDER BY updated_at DESC LIMIT 1")
     row = c.fetchone()
     if row:
@@ -131,11 +131,13 @@ def get_app_password():
     return default_hash
 
 def check_password(password):
+    """التحقق من كلمة المرور الأساسية (لا تنتهي أبداً)"""
     current_hash = get_app_password()
     input_hash = hashlib.sha256(password.encode()).hexdigest()
     return input_hash == current_hash
 
 def update_password(new_password, updated_by="bot"):
+    """تحديث كلمة المرور الأساسية"""
     new_hash = hashlib.sha256(new_password.encode()).hexdigest()
     c.execute("INSERT INTO passwords (password_hash, updated_at, updated_by) VALUES (?, ?, ?)", 
               (new_hash, int(time.time()), updated_by))
@@ -291,11 +293,13 @@ def get_access_stats():
     }
 
 def is_device_approved(device_name):
+    """التحقق من الجهاز المعتمد (كلمة أساسية - لا تنتهي أبداً)"""
     c.execute("SELECT device_name FROM approved_devices WHERE device_name = ?", (device_name,))
     row = c.fetchone()
     return row is not None
 
 def approve_device(device_name, username, approved_by="bot"):
+    """إضافة جهاز معتمد (دخول دائم - لا تنتهي أبداً)"""
     now = int(time.time())
     c.execute("""INSERT OR REPLACE INTO approved_devices 
                  (device_name, username, approved_at, last_login, approved_by) 
@@ -309,6 +313,7 @@ def update_device_last_login(device_name):
     conn.commit()
 
 def cleanup_expired_temp_sessions():
+    """تنظيف الجلسات المؤقتة المنتهية فقط (الكلمات المؤقتة فقط تنتهي)"""
     now = int(time.time())
     c.execute("DELETE FROM active_sessions WHERE session_expires < ? AND session_type = 'temp'", (now,))
     conn.commit()
@@ -662,7 +667,7 @@ def show_temp_password_menu(chat_id, message_id=None):
         [InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]
     ]
     
-    text = "🔑 **كلمات المرور المؤقتة**\n\nاختر نوع كلمة المرور:\n\n• **جهاز محدد:** كلمة مرور لجهاز واحد فقط\n• **جميع الأجهزة:** كلمة مرور واحدة صالحة لجميع الأجهزة النشطة\n\n⚠️ جميع كلمات المرور مؤقتة وتنتهي بعد المدة التي تحددها."
+    text = "🔑 **كلمات المرور المؤقتة**\n\nاختر نوع كلمة المرور:\n\n• **جهاز محدد:** كلمة مرور لجهاز واحد فقط (تنتهي بعد المدة المحددة)\n• **جميع الأجهزة:** كلمة مرور واحدة صالحة لجميع الأجهزة النشطة (تنتهي بعد المدة المحددة)\n\n⚠️ جميع كلمات المرور المؤقتة تنتهي صلاحيتها.\n\n🔐 **كلمة المرور الأساسية لا تنتهي أبداً** وتُستخدم للأجهزة المعتمدة."
     
     if message_id:
         bot.edit_message_text(
@@ -691,9 +696,9 @@ def show_temp_password_duration_menu(chat_id, device_name, username, message_id=
     ]
     
     if is_all_devices:
-        text = f"🔑 **كلمة مرور مؤقتة لجميع الأجهزة**\n\nاختر وحدة المدة:"
+        text = f"🔑 **كلمة مرور مؤقتة لجميع الأجهزة**\n\nاختر وحدة المدة (ستنتهي صلاحيتها بعد المدة المحددة):"
     else:
-        text = f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n👤 **المستخدم:** {username}\n\nاختر وحدة المدة:"
+        text = f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n👤 **المستخدم:** {username}\n\nاختر وحدة المدة (ستنتهي صلاحيتها بعد المدة المحددة):"
     
     if message_id:
         bot.edit_message_text(
@@ -712,7 +717,7 @@ def show_temp_password_duration_menu(chat_id, device_name, username, message_id=
         )
 
 def create_temp_password_for_device(device_name, duration, unit, is_all_devices=False):
-    """إنشاء كلمة مرور مؤقتة لجهاز أو لجميع الأجهزة"""
+    """إنشاء كلمة مرور مؤقتة لجهاز أو لجميع الأجهزة (تنتهي صلاحيتها)"""
     now = int(time.time())
     
     if unit == "minutes":
@@ -768,7 +773,7 @@ def show_send_notification_menu(chat_id, message_id=None):
         [InlineKeyboardButton("🔙 العودة للإعدادات", callback_data="menu_settings")]
     ]
     
-    text = "📢 **إرسال إشعارات**\n\nيمكنك إرسال إشعار لجهاز محدد أو لجميع الأجهزة النشطة.\n\nسيظهر الإشعار في لوحة الإشعارات وفي شاشة التطبيق."
+    text = "📢 **إرسال إشعارات**\n\nيمكنك إرسال إشعار لجهاز محدد أو لجميع الأجهزة النشطة.\n\nسيظهر الإشعار في لوحة الإشعارات وفي شاشة التطبيق.\n\n⚠️ **ملاحظة:** لا تحتاج إلى كتابة عنوان، فقط نص الإشعار."
     
     if message_id:
         bot.edit_message_text(
@@ -1011,7 +1016,7 @@ def handle_callback(update, context):
         keyboard.append([InlineKeyboardButton("🔙 العودة", callback_data="menu_temp_password")])
         
         query.edit_message_text(
-            "🔑 **اختر الجهاز لإنشاء كلمة مرور مؤقتة له:**\n\nبعد الاختيار ستختار مدة الصلاحية (دقائق/ساعات/أيام)",
+            "🔑 **اختر الجهاز لإنشاء كلمة مرور مؤقتة له:**\n\nبعد الاختيار ستختار مدة الصلاحية (دقائق/ساعات/أيام)\n\n⚠️ كلمة المرور المؤقتة تنتهي بعد المدة المحددة.",
             parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
@@ -1037,7 +1042,7 @@ def handle_callback(update, context):
         context.user_data['temp_unit'] = "minutes"
         context.user_data['temp_all_devices'] = False
         query.edit_message_text(
-            text=f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n\n⏰ أدخل عدد الدقائق (1-59):",
+            text=f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n\n⏰ أدخل عدد الدقائق (1-59):\n\n⚠️ هذه الكلمة ستنتهي صلاحيتها بعد المدة المحددة.",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
         context.user_data['waiting_for_temp_duration'] = True
@@ -1049,7 +1054,7 @@ def handle_callback(update, context):
         context.user_data['temp_unit'] = "hours"
         context.user_data['temp_all_devices'] = False
         query.edit_message_text(
-            text=f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n\n🕐 أدخل عدد الساعات (1-23):",
+            text=f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n\n🕐 أدخل عدد الساعات (1-23):\n\n⚠️ هذه الكلمة ستنتهي صلاحيتها بعد المدة المحددة.",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
         context.user_data['waiting_for_temp_duration'] = True
@@ -1061,7 +1066,7 @@ def handle_callback(update, context):
         context.user_data['temp_unit'] = "days"
         context.user_data['temp_all_devices'] = False
         query.edit_message_text(
-            text=f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n\n📅 أدخل عدد الأيام (1-365):",
+            text=f"🔑 **كلمة مرور مؤقتة لجهاز:** `{device_name}`\n\n📅 أدخل عدد الأيام (1-365):\n\n⚠️ هذه الكلمة ستنتهي صلاحيتها بعد المدة المحددة.",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
         context.user_data['waiting_for_temp_duration'] = True
@@ -1074,7 +1079,7 @@ def handle_callback(update, context):
         context.user_data['temp_unit'] = "minutes"
         context.user_data['temp_all_devices'] = True
         query.edit_message_text(
-            text=f"🔑 **كلمة مرور مؤقتة لجميع الأجهزة**\n\n⏰ أدخل عدد الدقائق (1-59):",
+            text=f"🔑 **كلمة مرور مؤقتة لجميع الأجهزة**\n\n⏰ أدخل عدد الدقائق (1-59):\n\n⚠️ هذه الكلمة ستنتهي صلاحيتها بعد المدة المحددة.",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
         context.user_data['waiting_for_temp_duration'] = True
@@ -1086,7 +1091,7 @@ def handle_callback(update, context):
         context.user_data['temp_unit'] = "hours"
         context.user_data['temp_all_devices'] = True
         query.edit_message_text(
-            text=f"🔑 **كلمة مرور مؤقتة لجميع الأجهزة**\n\n🕐 أدخل عدد الساعات (1-23):",
+            text=f"🔑 **كلمة مرور مؤقتة لجميع الأجهزة**\n\n🕐 أدخل عدد الساعات (1-23):\n\n⚠️ هذه الكلمة ستنتهي صلاحيتها بعد المدة المحددة.",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
         context.user_data['waiting_for_temp_duration'] = True
@@ -1098,13 +1103,13 @@ def handle_callback(update, context):
         context.user_data['temp_unit'] = "days"
         context.user_data['temp_all_devices'] = True
         query.edit_message_text(
-            text=f"🔑 **كلمة مرور مؤقتة لجميع الأجهزة**\n\n📅 أدخل عدد الأيام (1-365):",
+            text=f"🔑 **كلمة مرور مؤقتة لجميع الأجهزة**\n\n📅 أدخل عدد الأيام (1-365):\n\n⚠️ هذه الكلمة ستنتهي صلاحيتها بعد المدة المحددة.",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
         context.user_data['waiting_for_temp_duration'] = True
         return
     
-    # ========== إرسال الإشعارات ==========
+    # ========== إرسال الإشعارات (بدون عنوان) ==========
     if data == "menu_send_notification":
         show_send_notification_menu(chat_id, message_id)
         return
@@ -1114,9 +1119,10 @@ def handle_callback(update, context):
         return
     
     if data == "notify_all_devices":
-        context.user_data['waiting_for_broadcast_title'] = True
+        # طلب إشعار للجميع - مباشرة نطلب النص (بدون عنوان)
+        context.user_data['waiting_for_broadcast_message'] = True
         query.edit_message_text(
-            text="📢 **إرسال إشعار للجميع**\n\nأرسل عنوان الإشعار أولاً:",
+            text="📢 **إرسال إشعار للجميع**\n\n📝 **أرسل نص الإشعار الآن:**\n\n(لا تحتاج إلى كتابة عنوان، فقط نص الإشعار)",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
         return
@@ -1124,9 +1130,10 @@ def handle_callback(update, context):
     if data.startswith("notify_device_"):
         device_name = data[14:]
         context.user_data['notify_device'] = device_name
-        context.user_data['waiting_for_notification_title'] = True
+        # طلب إشعار لجهاز محدد - مباشرة نطلب النص (بدون عنوان)
+        context.user_data['waiting_for_notification_message'] = True
         query.edit_message_text(
-            text=f"📢 **إرسال إشعار للجهاز:** `{device_name}`\n\nأرسل عنوان الإشعار أولاً:",
+            text=f"📢 **إرسال إشعار للجهاز:** `{device_name}`\n\n📝 **أرسل نص الإشعار الآن:**\n\n(لا تحتاج إلى كتابة عنوان، فقط نص الإشعار)",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
         return
@@ -1182,6 +1189,9 @@ def handle_callback(update, context):
 📱 *الأجهزة النشطة:* {stats['active']}
 ✅ *الأجهزة المعتمدة:* {stats['approved_devices']}
 
+🔐 *كلمة المرور الأساسية:* لا تنتهي أبداً
+🔑 *كلمات المرور المؤقتة:* تنتهي صلاحيتها
+
 🔄 *آخر تحديث:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
         keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
@@ -1198,7 +1208,7 @@ def handle_callback(update, context):
         ).fetchall()
         
         if approved_devices:
-            text_msg = "✅ *الأجهزة المعتمدة:*\n\n"
+            text_msg = "✅ *الأجهزة المعتمدة (دخول دائم - لا تنتهي أبداً):*\n\n"
             for device in approved_devices:
                 time_str = datetime.fromtimestamp(device[2]).strftime('%Y-%m-%d %H:%M')
                 text_msg += f"👤 {device[0]} - 📱 {device[1]} - {time_str}\n"
@@ -1344,12 +1354,13 @@ def handle_callback(update, context):
 💬 *رسالة الترحيب:* 
 {welcome_template[:50]}...
 
-🔑 *كلمة المرور:* {'●' * 8}
+🔐 *كلمة المرور الأساسية:* {'●' * 8} (لا تنتهي أبداً)
+🔑 *كلمات المرور المؤقتة:* تنتهي صلاحيتها
 """
         keyboard = [
             [InlineKeyboardButton("📢 إرسال إشعارات", callback_data="menu_send_notification")],
             [InlineKeyboardButton("💬 تغيير رسالة الترحيب", callback_data="change_welcome_template")],
-            [InlineKeyboardButton("🔑 تغيير كلمة المرور", callback_data="change_password")],
+            [InlineKeyboardButton("🔑 تغيير كلمة المرور الأساسية", callback_data="change_password")],
             [InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]
         ]
         query.edit_message_text(
@@ -1361,7 +1372,7 @@ def handle_callback(update, context):
     
     elif data == "change_password":
         query.edit_message_text(
-            "🔑 **تغيير كلمة المرور**\n\nأرسل كلمة المرور الجديدة (4 أحرف على الأقل):",
+            "🔑 **تغيير كلمة المرور الأساسية**\n\nأرسل كلمة المرور الجديدة (4 أحرف على الأقل):\n\n⚠️ كلمة المرور الأساسية لا تنتهي أبداً وتُستخدم للأجهزة المعتمدة.",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
         context.user_data['waiting_for_new_password'] = True
@@ -1397,7 +1408,7 @@ def handle_callback(update, context):
         
         try:
             query.edit_message_text(
-                text=f"✅ **تمت الموافقة بنجاح**\n\nتمت إضافة الجهاز إلى قائمة الأجهزة المعتمدة.\nيمكن للمستخدم الآن الدخول إلى التطبيق في أي وقت.\n\n{get_setting('custom_logo', CUSTOM_LOGO)}",
+                text=f"✅ **تمت الموافقة بنجاح**\n\nتمت إضافة الجهاز إلى قائمة الأجهزة المعتمدة.\nيمكن للمستخدم الآن الدخول إلى التطبيق في أي وقت (دخول دائم لا ينتهي أبداً).\n\n{get_setting('custom_logo', CUSTOM_LOGO)}",
                 parse_mode=telegram.ParseMode.MARKDOWN
             )
         except:
@@ -1625,13 +1636,13 @@ def handle_message(update, context):
                 if is_all_devices:
                     bot.send_message(
                         chat_id=chat_id,
-                        text=f"✅ **تم إنشاء كلمة مرور مؤقتة لجميع الأجهزة!**\n\n🔑 كلمة المرور: `{temp_password}`\n⏰ المدة: {time_text}\n\n⚠️ هذه الكلمة صالحة لجميع الأجهزة النشطة.\nبعد انتهاء المدة سيتم إرجاع جميع المستخدمين لشاشة تسجيل الدخول.",
+                        text=f"✅ **تم إنشاء كلمة مرور مؤقتة لجميع الأجهزة!**\n\n🔑 كلمة المرور: `{temp_password}`\n⏰ المدة: {time_text}\n⚠️ تنتهي صلاحيتها بعد {time_text}\n\n🔐 ملاحظة: كلمة المرور الأساسية لا تنتهي أبداً وتُستخدم للأجهزة المعتمدة.",
                         parse_mode=telegram.ParseMode.MARKDOWN
                     )
                 else:
                     bot.send_message(
                         chat_id=chat_id,
-                        text=f"✅ **تم إنشاء كلمة مرور مؤقتة!**\n\n📱 الجهاز: `{device_name}`\n🔑 كلمة المرور: `{temp_password}`\n⏰ المدة: {time_text}\n\n⚠️ بعد انتهاء المدة سيتم إرجاع المستخدم لشاشة تسجيل الدخول.",
+                        text=f"✅ **تم إنشاء كلمة مرور مؤقتة!**\n\n📱 الجهاز: `{device_name}`\n🔑 كلمة المرور: `{temp_password}`\n⏰ المدة: {time_text}\n⚠️ تنتهي صلاحيتها بعد {time_text}\n\n🔐 ملاحظة: كلمة المرور الأساسية لا تنتهي أبداً وتُستخدم للأجهزة المعتمدة.",
                         parse_mode=telegram.ParseMode.MARKDOWN
                     )
         except ValueError:
@@ -1664,85 +1675,57 @@ def handle_message(update, context):
         send_main_menu(chat_id)
         return
     
-    # معالجة إرسال إشعار لجهاز محدد
-    if context.user_data.get('waiting_for_notification_title'):
-        context.user_data['notification_title'] = text
-        context.user_data['waiting_for_notification_title'] = False
-        context.user_data['waiting_for_notification_message'] = True
-        bot.send_message(
-            chat_id=chat_id,
-            text="📝 **أرسل نص الإشعار الآن:**",
-            parse_mode=telegram.ParseMode.MARKDOWN
-        )
-        return
-    
+    # معالجة إرسال إشعار لجهاز محدد (بدون عنوان)
     if context.user_data.get('waiting_for_notification_message'):
-        title = context.user_data.get('notification_title', 'تطبيق TOMB')
-        message = text
+        message_text = text
         device_name = context.user_data.get('notify_device')
         
-        c.execute("""INSERT INTO notifications (device_name, title, message, created_at, is_read)
-                     VALUES (?, ?, ?, ?, 0)""",
-                  (device_name, title, message, int(time.time())))
+        c.execute("""INSERT INTO notifications (device_name, message, created_at, is_read)
+                     VALUES (?, ?, ?, 0)""",
+                  (device_name, message_text, int(time.time())))
         conn.commit()
         
         bot.send_message(
             chat_id=chat_id,
-            text=f"✅ **تم إرسال الإشعار بنجاح!**\n\n📱 الجهاز: `{device_name}`\n📌 العنوان: {title}\n💬 الرسالة: {message}",
+            text=f"✅ **تم إرسال الإشعار بنجاح!**\n\n📱 الجهاز: `{device_name}`\n💬 الرسالة: {message_text}",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
         
-        context.user_data.pop('waiting_for_notification_title', None)
         context.user_data.pop('waiting_for_notification_message', None)
-        context.user_data.pop('notification_title', None)
         context.user_data.pop('notify_device', None)
         send_main_menu(chat_id)
         return
     
-    # معالجة إرسال إشعار للجميع
-    if context.user_data.get('waiting_for_broadcast_title'):
-        context.user_data['broadcast_title'] = text
-        context.user_data['waiting_for_broadcast_title'] = False
-        context.user_data['waiting_for_broadcast_message'] = True
-        bot.send_message(
-            chat_id=chat_id,
-            text="📝 **أرسل نص الإشعار للجميع الآن:**",
-            parse_mode=telegram.ParseMode.MARKDOWN
-        )
-        return
-    
+    # معالجة إرسال إشعار للجميع (بدون عنوان)
     if context.user_data.get('waiting_for_broadcast_message'):
-        title = context.user_data.get('broadcast_title', 'تطبيق TOMB')
-        message = text
+        message_text = text
         
         devices = get_active_devices()
         for device in devices:
             device_name = device[0]
-            c.execute("""INSERT INTO notifications (device_name, title, message, created_at, is_read)
-                         VALUES (?, ?, ?, ?, 0)""",
-                      (device_name, title, message, int(time.time())))
+            c.execute("""INSERT INTO notifications (device_name, message, created_at, is_read)
+                         VALUES (?, ?, ?, 0)""",
+                      (device_name, message_text, int(time.time())))
         conn.commit()
         
         bot.send_message(
             chat_id=chat_id,
-            text=f"✅ **تم إرسال الإشعار للجميع بنجاح!**\n\n📌 العنوان: {title}\n💬 الرسالة: {message}\n📱 عدد الأجهزة: {len(devices)}",
+            text=f"✅ **تم إرسال الإشعار للجميع بنجاح!**\n\n💬 الرسالة: {message_text}\n📱 عدد الأجهزة: {len(devices)}",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
         
-        context.user_data.pop('waiting_for_broadcast_title', None)
         context.user_data.pop('waiting_for_broadcast_message', None)
-        context.user_data.pop('broadcast_title', None)
         send_main_menu(chat_id)
         return
     
-    # معالجة تغيير كلمة المرور
+    # معالجة تغيير كلمة المرور الأساسية
     if context.user_data.get('waiting_for_new_password'):
         new_password = text.strip()
         if len(new_password) >= 4:
             if update_password(new_password, "bot"):
                 bot.send_message(
                     chat_id=chat_id,
-                    text=f"✅ تم تغيير كلمة مرور التطبيق بنجاح!\n\n🔑 كلمة المرور الجديدة: `{new_password}`",
+                    text=f"✅ تم تغيير كلمة المرور الأساسية بنجاح!\n\n🔑 كلمة المرور الجديدة: `{new_password}`\n\n⚠️ كلمة المرور الأساسية لا تنتهي أبداً وتُستخدم للأجهزة المعتمدة.",
                     parse_mode=telegram.ParseMode.MARKDOWN
                 )
             else:
@@ -1813,8 +1796,8 @@ def home():
     return jsonify({
         "status": "online",
         "service": "Tomb Bot Protection System",
-        "version": "6.2",
-        "message": "API is working! (Permanent passwords for approved devices, Temporary passwords with expiration)",
+        "version": "6.3",
+        "message": "API is working! (Permanent passwords for approved devices - NEVER EXPIRE, Temporary passwords with expiration)",
         "endpoints": [
             "/request_access - POST",
             "/check_status/<request_id> - GET", 
@@ -1867,15 +1850,15 @@ def request_access():
                 "remaining_text": ban_info.get('remaining_text', '')
             })
         
-        # التحقق مما إذا كان الجهاز معتمداً بالفعل (كلمة أساسية سابقة)
+        # التحقق مما إذا كان الجهاز معتمداً بالفعل (كلمة أساسية - لا تنتهي أبداً)
         if is_device_approved(device_name):
             update_device_last_login(device_name)
             add_active_device(device_name, username, device_info)
             log_access(username, device_name, ip_address, "auto_approved")
-            print(f"✅ Device {device_name} is already approved, auto-login")
+            print(f"✅ Device {device_name} is already approved, auto-login (permanent access - never expires)")
             return jsonify({
                 "status": "approved",
-                "message": "تم الدخول تلقائياً (جهاز معتمد)",
+                "message": "تم الدخول تلقائياً (جهاز معتمد - دخول دائم لا ينتهي أبداً)",
                 "session_type": "normal",
                 "expires_at": 0
             })
@@ -1927,6 +1910,7 @@ def check_status(request_id):
 
 @app.route('/verify_password', methods=['POST'])
 def verify_password():
+    """التحقق من كلمة المرور الأساسية (لا تنتهي أبداً)"""
     try:
         data = request.json
         password = data.get('password', '')
@@ -1935,7 +1919,7 @@ def verify_password():
         if check_password(password):
             if device_name and is_device_approved(device_name):
                 update_device_last_login(device_name)
-            return jsonify({"valid": True})
+            return jsonify({"valid": True, "message": "كلمة المرور الأساسية صحيحة (لا تنتهي أبداً)"})
         return jsonify({"valid": False})
     
     except Exception as e:
@@ -1943,6 +1927,7 @@ def verify_password():
 
 @app.route('/verify_temp_password', methods=['POST'])
 def verify_temp_password():
+    """التحقق من كلمة المرور المؤقتة (تنتهي صلاحيتها)"""
     try:
         data = request.json
         temp_password = data.get('temp_password', '')
@@ -1960,7 +1945,7 @@ def verify_temp_password():
             # نستخدم الكلمة مرة واحدة
             c.execute("UPDATE temp_passwords SET used = 1 WHERE id = ?", (row[0],))
             conn.commit()
-            return jsonify({"valid": True, "expires_at": row[1]})
+            return jsonify({"valid": True, "expires_at": row[1], "message": "كلمة مرور مؤقتة صالحة (تنتهي صلاحيتها)"})
         
         return jsonify({"valid": False})
     
@@ -1987,7 +1972,8 @@ def check_device_approved():
         
         return jsonify({
             "approved": approved,
-            "banned": False
+            "banned": False,
+            "message": "جهاز معتمد - دخول دائم لا ينتهي أبداً" if approved else "جهاز غير معتمد"
         })
     
     except Exception as e:
@@ -1995,6 +1981,7 @@ def check_device_approved():
 
 @app.route('/change_password', methods=['POST'])
 def change_password():
+    """تغيير كلمة المرور الأساسية"""
     try:
         data = request.json
         old_password = data.get('old_password', '')
@@ -2007,7 +1994,7 @@ def change_password():
             return jsonify({"success": False, "error": "كلمة المرور الجديدة قصيرة جداً"})
         
         if update_password(new_password, "app"):
-            return jsonify({"success": True})
+            return jsonify({"success": True, "message": "تم تغيير كلمة المرور الأساسية بنجاح (لا تنتهي أبداً)"})
         
         return jsonify({"success": False, "error": "فشل في تحديث كلمة المرور"})
     
@@ -2039,7 +2026,9 @@ def get_settings():
         return jsonify({
             "logo": get_setting("custom_logo", CUSTOM_LOGO),
             "welcome_message": get_setting("welcome_message", WELCOME_MESSAGE),
-            "welcome_template": get_setting("welcome_message_template", "مرحباً بك يا & في تطبيق tomb of Makrotik")
+            "welcome_template": get_setting("welcome_message_template", "مرحباً بك يا & في تطبيق tomb of Makrotik"),
+            "permanent_password_note": "كلمة المرور الأساسية لا تنتهي أبداً",
+            "temp_password_note": "كلمات المرور المؤقتة تنتهي صلاحيتها"
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2056,6 +2045,8 @@ def get_welcome_template():
 def get_stats():
     try:
         stats = get_access_stats()
+        stats["permanent_password"] = "لا تنتهي أبداً"
+        stats["temp_password"] = "تنتهي صلاحيتها"
         return jsonify(stats)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2143,10 +2134,10 @@ def check_session():
                 "session_type": "normal",
                 "expires_at": 0,
                 "remaining_hours": -1,
-                "remaining_text": "لا تنتهي أبداً"
+                "remaining_text": "لا تنتهي أبداً (دخول دائم)"
             })
         
-        # التحقق من الجلسات المؤقتة
+        # التحقق من الجلسات المؤقتة (تنتهي)
         c.execute("SELECT session_expires, session_type FROM active_sessions WHERE device_name = ?", (device_name,))
         row = c.fetchone()
         
@@ -2214,7 +2205,7 @@ def refresh_device_status():
         
         if is_device_approved(device_name):
             update_device_last_login(device_name)
-            return jsonify({"status": "valid", "type": "permanent"})
+            return jsonify({"status": "valid", "type": "permanent", "note": "دخول دائم لا ينتهي أبداً"})
         
         c.execute("SELECT session_expires FROM active_sessions WHERE device_name = ?", (device_name,))
         row = c.fetchone()
@@ -2222,8 +2213,8 @@ def refresh_device_status():
             if row[0] < int(time.time()):
                 c.execute("DELETE FROM active_sessions WHERE device_name = ?", (device_name,))
                 conn.commit()
-                return jsonify({"status": "expired", "message": "انتهت صلاحية الجلسة"})
-            return jsonify({"status": "valid", "type": "temp"})
+                return jsonify({"status": "expired", "message": "انتهت صلاحية الجلسة المؤقتة"})
+            return jsonify({"status": "valid", "type": "temp", "note": "جلسة مؤقتة - تنتهي صلاحيتها"})
         
         return jsonify({"status": "no_session"})
     
@@ -2253,7 +2244,8 @@ def update_device_last_login_endpoint():
 @app.route('/get_notifications/<device_name>', methods=['GET'])
 def get_notifications(device_name):
     try:
-        c.execute("""SELECT id, title, message, created_at, is_read 
+        # لا يوجد عنوان للإشعارات، فقط رسالة
+        c.execute("""SELECT id, message, created_at, is_read 
                      FROM notifications WHERE device_name = ? OR device_name = 'all'
                      ORDER BY created_at DESC LIMIT 50""", (device_name,))
         rows = c.fetchall()
@@ -2262,10 +2254,9 @@ def get_notifications(device_name):
         for row in rows:
             notifications.append({
                 "id": row[0],
-                "title": row[1],
-                "message": row[2],
-                "created_at": row[3],
-                "is_read": row[4]
+                "message": row[1],
+                "created_at": row[2],
+                "is_read": row[3]
             })
         
         return jsonify({"notifications": notifications})
@@ -2286,7 +2277,9 @@ def health():
     return jsonify({
         "status": "ok",
         "bot": "running",
-        "version": "6.2",
+        "version": "6.3",
+        "permanent_password": "لا تنتهي أبداً",
+        "temp_password": "تنتهي صلاحيتها",
         "timestamp": int(time.time())
     })
 
