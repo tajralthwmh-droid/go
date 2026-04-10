@@ -14,7 +14,7 @@ from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageH
 
 # ===================== الإعدادات =====================
 BOT_TOKEN = '8513010794:AAG4J4n6dZd7MFmEntIP4oTNqc_6y6vWwrs'
-ADMIN_CHAT_ID = '8311254462'
+MASTER_ADMIN_ID = '8311254462'  # هذا المعرف لا يمكن حذفه أبداً
 app = Flask(__name__)
 CORS(app)
 
@@ -104,7 +104,52 @@ c.execute('''CREATE TABLE IF NOT EXISTS notifications
               created_at INTEGER,
               is_read INTEGER DEFAULT 0)''')
 
+# جدول المستخدمين المصرح لهم (جديد)
+c.execute('''CREATE TABLE IF NOT EXISTS authorized_users
+             (user_id TEXT PRIMARY KEY,
+              username TEXT,
+              added_by TEXT,
+              added_at INTEGER,
+              can_remove INTEGER DEFAULT 1)''')
+
+# إضافة المستخدم الأساسي (لا يمكن حذفه)
+c.execute("INSERT OR IGNORE INTO authorized_users (user_id, username, added_by, added_at, can_remove) VALUES (?, ?, ?, ?, ?)",
+          (MASTER_ADMIN_ID, "MASTER", "system", int(time.time()), 0))
+
 conn.commit()
+
+# ===================== دوال المستخدمين المصرح لهم =====================
+def is_authorized(chat_id):
+    """التحقق مما إذا كان المستخدم مصرح له باستخدام البوت"""
+    c.execute("SELECT user_id FROM authorized_users WHERE user_id = ?", (str(chat_id),))
+    return c.fetchone() is not None
+
+def add_authorized_user(user_id, username, added_by):
+    """إضافة مستخدم جديد مصرح له"""
+    try:
+        c.execute("INSERT INTO authorized_users (user_id, username, added_by, added_at, can_remove) VALUES (?, ?, ?, ?, 1)",
+                  (str(user_id), username, str(added_by), int(time.time())))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+
+def remove_authorized_user(user_id):
+    """حذف مستخدم مصرح له (لا يمكن حذف الماستر)"""
+    if str(user_id) == MASTER_ADMIN_ID:
+        return False
+    c.execute("DELETE FROM authorized_users WHERE user_id = ?", (str(user_id),))
+    conn.commit()
+    return True
+
+def get_authorized_users():
+    """الحصول على قائمة المستخدمين المصرح لهم"""
+    c.execute("SELECT user_id, username, added_by, added_at, can_remove FROM authorized_users ORDER BY added_at ASC")
+    return c.fetchall()
+
+def get_authorized_users_count():
+    c.execute("SELECT COUNT(*) FROM authorized_users")
+    return c.fetchone()[0]
 
 # ===================== دوال الإعدادات =====================
 def get_setting(key, default=""):
@@ -272,6 +317,7 @@ def get_access_stats():
     banned = c.execute("SELECT COUNT(*) FROM banned_devices").fetchone()[0]
     active = c.execute("SELECT COUNT(*) FROM active_devices").fetchone()[0]
     approved_devices = c.execute("SELECT COUNT(*) FROM approved_devices").fetchone()[0]
+    authorized_users = get_authorized_users_count()
     
     recent = c.execute("""SELECT username, device_name, status, timestamp 
                           FROM approvals ORDER BY timestamp DESC LIMIT 10""").fetchall()
@@ -284,6 +330,7 @@ def get_access_stats():
         "banned": banned,
         "active": active,
         "approved_devices": approved_devices,
+        "authorized_users": authorized_users,
         "recent": recent
     }
 
@@ -350,7 +397,8 @@ def send_main_menu(chat_id):
             InlineKeyboardButton("🚪 تسجيل خروج جهاز", callback_data="menu_force_logout")
         ],
         [
-            InlineKeyboardButton("🗑️ مسح الطلبات", callback_data="menu_clear_requests_options")
+            InlineKeyboardButton("🗑️ مسح الطلبات", callback_data="menu_clear_requests_options"),
+            InlineKeyboardButton("👥 إدارة المستخدمين", callback_data="menu_users_management")
         ]
     ]
     
@@ -368,6 +416,98 @@ def send_main_menu(chat_id):
             chat_id=chat_id,
             text=f"{logo}\n\n{welcome}\n\n📌 لوحة التحكم الرئيسية\n\nاختر أحد الخيارات أدناه:",
             reply_markup=reply_markup
+        )
+
+def show_users_management_menu(chat_id, message_id=None):
+    """قائمة إدارة المستخدمين"""
+    users = get_authorized_users()
+    master_id = MASTER_ADMIN_ID
+    
+    text = f"👥 **إدارة المستخدمين المصرح لهم**\n\n"
+    text += f"👑 **المالك الأساسي:** `{master_id}` (لا يمكن حذفه)\n\n"
+    text += f"📋 **قائمة المستخدمين المصرح لهم:**\n"
+    
+    if users:
+        for user in users:
+            user_id, username, added_by, added_at, can_remove = user
+            added_time = datetime.fromtimestamp(added_at).strftime('%Y-%m-%d %H:%M')
+            if user_id == master_id:
+                text += f"👑 `{user_id}` - {username} - مالك\n"
+            else:
+                text += f"👤 `{user_id}` - {username} - أضيف بواسطة: {added_by} - {added_time}\n"
+    else:
+        text += "لا يوجد مستخدمين غير المالك\n"
+    
+    keyboard = [
+        [InlineKeyboardButton("➕ إضافة مستخدم جديد", callback_data="add_new_user")],
+        [InlineKeyboardButton("❌ حذف مستخدم", callback_data="remove_user_list")],
+        [InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]
+    ]
+    
+    if message_id:
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+def show_remove_user_list(chat_id, message_id=None):
+    """عرض قائمة المستخدمين للحذف"""
+    users = get_authorized_users()
+    master_id = MASTER_ADMIN_ID
+    
+    # فلترة المستخدمين لإزالة الماستر من قائمة الحذف
+    removable_users = [u for u in users if u[0] != master_id]
+    
+    if not removable_users:
+        text = "📭 لا يوجد مستخدمين قابلين للحذف"
+        keyboard = [[InlineKeyboardButton("🔙 العودة", callback_data="menu_users_management")]]
+        if message_id:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        return
+    
+    keyboard = []
+    for user in removable_users:
+        user_id, username, added_by, added_at, can_remove = user
+        keyboard.append([InlineKeyboardButton(f"❌ {user_id} - {username}", callback_data=f"remove_user_{user_id}")])
+    
+    keyboard.append([InlineKeyboardButton("🔙 العودة", callback_data="menu_users_management")])
+    text = "❌ **اختر المستخدم لحذفه:**\n\n⚠️ ملاحظة: لا يمكن حذف المالك الأساسي"
+    
+    if message_id:
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode=telegram.ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
 def send_approval_request(request_id, app_name="Tomb", username="Unknown", 
@@ -404,20 +544,19 @@ def send_approval_request(request_id, app_name="Tomb", username="Unknown",
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    try:
-        bot.send_message(
-            chat_id=ADMIN_CHAT_ID,
-            text=message_text,
-            parse_mode=telegram.ParseMode.MARKDOWN,
-            reply_markup=reply_markup
-        )
-    except Exception as e:
-        print(f"Error sending message: {e}")
-        bot.send_message(
-            chat_id=ADMIN_CHAT_ID,
-            text=message_text.replace('*', '').replace('`', ''),
-            reply_markup=reply_markup
-        )
+    # إرسال الطلب لجميع المستخدمين المصرح لهم
+    users = get_authorized_users()
+    for user in users:
+        user_id = user[0]
+        try:
+            bot.send_message(
+                chat_id=user_id,
+                text=message_text,
+                parse_mode=telegram.ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            print(f"Error sending to {user_id}: {e}")
     
     pending_requests[request_id] = {
         "status": "pending", 
@@ -431,6 +570,56 @@ def send_approval_request(request_id, app_name="Tomb", username="Unknown",
                  VALUES (?, ?, ?, ?, ?, ?, ?)""",
               (request_id, "pending", int(time.time()), username, device_name, device_info, ip_address))
     conn.commit()
+
+def show_pending_requests_with_buttons(chat_id, message_id=None):
+    """عرض الطلبات المعلقة مع أزرار الموافقة والرفض لكل طلب"""
+    pending_reqs = c.execute(
+        "SELECT request_id, username, device_name, timestamp FROM approvals WHERE status='pending' ORDER BY timestamp DESC"
+    ).fetchall()
+    
+    if pending_reqs:
+        keyboard = []
+        for req in pending_reqs:
+            req_id, username, device_name, timestamp = req
+            time_str = datetime.fromtimestamp(timestamp).strftime('%H:%M:%S')
+            keyboard.append([
+                InlineKeyboardButton(f"✅ {username} - {device_name[:15]}", callback_data=f"approve_{req_id}"),
+                InlineKeyboardButton(f"❌ رفض", callback_data=f"deny_{req_id}")
+            ])
+        keyboard.append([InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")])
+        
+        text_msg = "⏳ **الطلبات المعلقة:**\n\nاختر الطلب للموافقة أو الرفض:"
+        
+        if message_id:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text_msg,
+                parse_mode=telegram.ParseMode.MARKDOWN,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            bot.send_message(
+                chat_id=chat_id,
+                text=text_msg,
+                parse_mode=telegram.ParseMode.MARKDOWN,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+    else:
+        keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
+        if message_id:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="✅ لا توجد طلبات معلقة",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            bot.send_message(
+                chat_id=chat_id,
+                text="✅ لا توجد طلبات معلقة",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
 
 def show_device_list_for_ban(chat_id, message_id=None):
     devices = get_all_known_devices()
@@ -870,6 +1059,37 @@ def handle_callback(update, context):
     chat_id = query.message.chat_id
     message_id = query.message.message_id
     
+    # التحقق من الصلاحية
+    if not is_authorized(chat_id):
+        query.edit_message_text("⚠️ أنت غير مصرح لك باستخدام هذا البوت")
+        return
+    
+    # ========== إدارة المستخدمين ==========
+    if data == "menu_users_management":
+        show_users_management_menu(chat_id, message_id)
+        return
+    
+    if data == "add_new_user":
+        query.edit_message_text(
+            "➕ **إضافة مستخدم جديد**\n\nأرسل معرف المستخدم (ID) الخاص بالشخص الذي تريد إضافته:\n\nمثال: `123456789`\n\n⚠️ يمكنك الحصول على ID المستخدم من بوت @userinfobot",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        context.user_data['waiting_for_new_user_id'] = True
+        return
+    
+    if data == "remove_user_list":
+        show_remove_user_list(chat_id, message_id)
+        return
+    
+    if data.startswith("remove_user_"):
+        user_to_remove = data[12:]
+        if remove_authorized_user(user_to_remove):
+            query.edit_message_text(f"✅ تم حذف المستخدم `{user_to_remove}` بنجاح", parse_mode=telegram.ParseMode.MARKDOWN)
+        else:
+            query.edit_message_text("❌ لا يمكن حذف المالك الأساسي للبوت", parse_mode=telegram.ParseMode.MARKDOWN)
+        show_users_management_menu(chat_id)
+        return
+    
     # ========== زر تسجيل خروج جهاز ==========
     if data == "menu_force_logout":
         show_device_list_for_logout(chat_id, message_id)
@@ -887,6 +1107,11 @@ def handle_callback(update, context):
             parse_mode=telegram.ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+        return
+    
+    # ========== الطلبات المعلقة ==========
+    if data == "menu_pending":
+        show_pending_requests_with_buttons(chat_id, message_id)
         return
     
     # ========== اختيار جهاز للحظر ==========
@@ -1143,31 +1368,7 @@ def handle_callback(update, context):
         show_device_list_for_unban(chat_id, message_id)
         return
     
-    if data == "menu_pending":
-        pending_reqs = c.execute(
-            "SELECT request_id, username, device_name, timestamp FROM approvals WHERE status='pending' ORDER BY timestamp DESC"
-        ).fetchall()
-        
-        if pending_reqs:
-            text_msg = "⏳ *الطلبات المعلقة:*\n\n"
-            for req in pending_reqs:
-                time_str = datetime.fromtimestamp(req[3]).strftime('%H:%M:%S')
-                text_msg += f"🆔 `{req[0][:8]}` - {req[1]} - {req[2]} - {time_str}\n"
-            keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
-            query.edit_message_text(
-                text=text_msg,
-                parse_mode=telegram.ParseMode.MARKDOWN,
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-        else:
-            keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
-            query.edit_message_text(
-                text="✅ لا توجد طلبات معلقة",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-        return
-    
-    elif data == "menu_stats":
+    if data == "menu_stats":
         stats = get_access_stats()
         text_msg = f"""
 📊 *إحصائيات النظام*
@@ -1179,6 +1380,7 @@ def handle_callback(update, context):
 🚫 *الأجهزة المحظورة:* {stats['banned']}
 📱 *الأجهزة النشطة:* {stats['active']}
 ✅ *الأجهزة المعتمدة:* {stats['approved_devices']}
+👥 *المستخدمين المصرح لهم:* {stats['authorized_users']}
 
 🔄 *آخر تحديث:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
@@ -1348,6 +1550,7 @@ def handle_callback(update, context):
             [InlineKeyboardButton("📢 إرسال إشعارات", callback_data="menu_send_notification")],
             [InlineKeyboardButton("💬 تغيير رسالة الترحيب", callback_data="change_welcome_template")],
             [InlineKeyboardButton("🔑 تغيير كلمة المرور", callback_data="change_password")],
+            [InlineKeyboardButton("👥 إدارة المستخدمين", callback_data="menu_users_management")],
             [InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]
         ]
         query.edit_message_text(
@@ -1468,8 +1671,39 @@ def handle_message(update, context):
     chat_id = message.chat_id
     text = message.text.strip()
     
-    if str(chat_id) != str(ADMIN_CHAT_ID):
+    # التحقق من الصلاحية
+    if not is_authorized(chat_id):
         bot.send_message(chat_id=chat_id, text="⚠️ أنت غير مصرح لك باستخدام هذا البوت")
+        return
+    
+    # ========== إضافة مستخدم جديد ==========
+    if context.user_data.get('waiting_for_new_user_id'):
+        try:
+            new_user_id = text.strip()
+            # التحقق من أن الإدخال رقم
+            if not new_user_id.isdigit():
+                bot.send_message(chat_id=chat_id, text="❌ معرف المستخدم يجب أن يكون أرقاماً فقط")
+                context.user_data.pop('waiting_for_new_user_id', None)
+                send_main_menu(chat_id)
+                return
+            
+            # الحصول على اسم المستخدم (اختياري)
+            username = f"user_{new_user_id}"
+            added_by = str(chat_id)
+            
+            if add_authorized_user(new_user_id, username, added_by):
+                bot.send_message(
+                    chat_id=chat_id,
+                    text=f"✅ **تم إضافة المستخدم بنجاح!**\n\n🆔 المعرف: `{new_user_id}`\n👤 الاسم: {username}\n\nيمكن لهذا المستخدم الآن استخدام البوت.",
+                    parse_mode=telegram.ParseMode.MARKDOWN
+                )
+            else:
+                bot.send_message(chat_id=chat_id, text="❌ هذا المستخدم موجود بالفعل في القائمة")
+        except Exception as e:
+            bot.send_message(chat_id=chat_id, text=f"❌ خطأ: {e}")
+        
+        context.user_data.pop('waiting_for_new_user_id', None)
+        send_main_menu(chat_id)
         return
     
     # ========== معالجة سبب الحظر ==========
@@ -1702,7 +1936,7 @@ def handle_message(update, context):
             if update_password(new_password, "bot"):
                 bot.send_message(
                     chat_id=chat_id,
-                    text=f"✅ تم تغيير كلمة مرور التطبيق بنجاح!\n\n🔑 كلمة المرور الجديدة: `{new_password}`",
+                    text=f"✅ تم تغيير كلمة مرور التطبيق بنجاح!\n\n🔑 كلمة المرور الجديدة: `{new_password}`\n\n⚠️ كلمة المرور الأساسية لا تنتهي أبداً",
                     parse_mode=telegram.ParseMode.MARKDOWN
                 )
             else:
@@ -1753,13 +1987,15 @@ def home():
     return jsonify({
         "status": "online",
         "service": "Tomb Bot Protection System",
-        "version": "7.0",
+        "version": "8.0",
         "message": "API is working! (Permanent passwords for approved devices, Temporary passwords with expiration)",
         "features": [
             "Ban with reason",
             "Notifications without title",
             "Temporary passwords",
-            "Auto-login for approved devices"
+            "Auto-login for approved devices",
+            "Multi-user support (authorized users)",
+            "Pending requests with approve/deny buttons"
         ],
         "endpoints": [
             "/request_access - POST",
@@ -1812,7 +2048,7 @@ def request_access():
                 "remaining_text": ban_info.get('remaining_text', '')
             })
         
-        # التحقق مما إذا كان الجهاز معتمداً بالفعل (كلمة أساسية سابقة)
+        # التحقق مما إذا كان الجهاز معتمداً بالفعل (كلمة أساسية سابقة - لا تنتهي أبداً)
         if is_device_approved(device_name):
             update_device_last_login(device_name)
             add_active_device(device_name, username, device_info)
@@ -1822,10 +2058,11 @@ def request_access():
                 "status": "approved",
                 "message": "تم الدخول تلقائياً (جهاز معتمد)",
                 "session_type": "normal",
-                "expires_at": 0
+                "expires_at": 0,
+                "note": "كلمة المرور الأساسية لا تنتهي أبداً"
             })
         
-        # إرسال طلب موافقة للمطور
+        # إرسال طلب موافقة للمطورين المصرح لهم
         send_approval_request(
             request_id=request_id,
             app_name=app_name,
@@ -1880,7 +2117,7 @@ def verify_password():
         if check_password(password):
             if device_name and is_device_approved(device_name):
                 update_device_last_login(device_name)
-            return jsonify({"valid": True})
+            return jsonify({"valid": True, "note": "كلمة المرور الأساسية لا تنتهي أبداً"})
         return jsonify({"valid": False})
     
     except Exception as e:
@@ -1905,7 +2142,7 @@ def verify_temp_password():
             # نستخدم الكلمة مرة واحدة
             c.execute("UPDATE temp_passwords SET used = 1 WHERE id = ?", (row[0],))
             conn.commit()
-            return jsonify({"valid": True, "expires_at": row[1]})
+            return jsonify({"valid": True, "expires_at": row[1], "note": "كلمة مرور مؤقتة تنتهي بعد المدة"})
         
         return jsonify({"valid": False})
     
@@ -1932,7 +2169,8 @@ def check_device_approved():
         
         return jsonify({
             "approved": approved,
-            "banned": False
+            "banned": False,
+            "note": "الأجهزة المعتمدة تستخدم كلمة المرور الأساسية التي لا تنتهي أبداً"
         })
     
     except Exception as e:
@@ -1952,7 +2190,7 @@ def change_password():
             return jsonify({"success": False, "error": "كلمة المرور الجديدة قصيرة جداً"})
         
         if update_password(new_password, "app"):
-            return jsonify({"success": True})
+            return jsonify({"success": True, "note": "كلمة المرور الأساسية الجديدة لا تنتهي أبداً"})
         
         return jsonify({"success": False, "error": "فشل في تحديث كلمة المرور"})
     
@@ -2049,7 +2287,13 @@ def notify_app_opened():
 
 ✅ هذا مجرد إشعار بفتح التطبيق، ليس طلب موافقة
 """
-        bot.send_message(chat_id=ADMIN_CHAT_ID, text=message, parse_mode=telegram.ParseMode.MARKDOWN)
+        # إرسال الإشعار لجميع المستخدمين المصرح لهم
+        users = get_authorized_users()
+        for user in users:
+            try:
+                bot.send_message(chat_id=user[0], text=message, parse_mode=telegram.ParseMode.MARKDOWN)
+            except:
+                pass
         
         c.execute("""INSERT INTO access_logs (username, device_name, ip_address, status, timestamp) 
                      VALUES (?, ?, ?, ?, ?)""",
@@ -2087,7 +2331,7 @@ def check_session():
                 "session_type": "normal",
                 "expires_at": 0,
                 "remaining_hours": -1,
-                "remaining_text": "لا تنتهي أبداً"
+                "remaining_text": "لا تنتهي أبداً (كلمة المرور الأساسية)"
             })
         
         # التحقق من الجلسات المؤقتة
@@ -2158,7 +2402,7 @@ def refresh_device_status():
         
         if is_device_approved(device_name):
             update_device_last_login(device_name)
-            return jsonify({"status": "valid", "type": "permanent"})
+            return jsonify({"status": "valid", "type": "permanent", "note": "لا تنتهي أبداً"})
         
         c.execute("SELECT session_expires FROM active_sessions WHERE device_name = ?", (device_name,))
         row = c.fetchone()
@@ -2228,7 +2472,7 @@ def health():
     return jsonify({
         "status": "ok",
         "bot": "running",
-        "version": "7.0",
+        "version": "8.0",
         "timestamp": int(time.time())
     })
 
