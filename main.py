@@ -96,11 +96,10 @@ c.execute('''CREATE TABLE IF NOT EXISTS approved_devices
               last_login INTEGER,
               approved_by TEXT)''')
 
-# جدول الإشعارات
+# جدول الإشعارات (بدون عنوان)
 c.execute('''CREATE TABLE IF NOT EXISTS notifications
              (id INTEGER PRIMARY KEY AUTOINCREMENT,
               device_name TEXT,
-              title TEXT,
               message TEXT,
               created_at INTEGER,
               is_read INTEGER DEFAULT 0)''')
@@ -760,13 +759,14 @@ def create_temp_password_for_device(device_name, duration, unit, is_all_devices=
     return temp_password, time_text
 
 def show_send_notification_menu(chat_id, message_id=None):
+    """قائمة إرسال الإشعارات (بدون عنوان)"""
     keyboard = [
-        [InlineKeyboardButton("📱 إشعار لجهاز محدد", callback_data="notify_single_device")],
-        [InlineKeyboardButton("👥 إشعار للجميع", callback_data="notify_all_devices")],
+        [InlineKeyboardButton("📱 جهاز محدد", callback_data="notify_single_device")],
+        [InlineKeyboardButton("👥 للجميع", callback_data="notify_all_devices")],
         [InlineKeyboardButton("🔙 العودة للإعدادات", callback_data="menu_settings")]
     ]
     
-    text = "📢 **إرسال إشعارات**\n\nيمكنك إرسال إشعار لجهاز محدد أو لجميع الأجهزة النشطة.\n\nسيظهر الإشعار في لوحة الإشعارات وفي شاشة التطبيق."
+    text = "📢 **إرسال إشعارات**\n\nيمكنك إرسال إشعار لجهاز محدد أو لجميع الأجهزة النشطة."
     
     if message_id:
         bot.edit_message_text(
@@ -898,55 +898,54 @@ def handle_callback(update, context):
         show_ban_type_menu(chat_id, device_name, username, message_id)
         return
     
-    # ========== اختيار نوع الحظر ==========
+    # ========== اختيار نوع الحظر (مع طلب السبب) ==========
     if data.startswith("ban_type_minutes_"):
         device_name = data[17:]
         context.user_data['ban_device'] = device_name
         context.user_data['ban_type'] = "minutes"
+        context.user_data['ban_unit'] = "minutes"
         query.edit_message_text(
-            text=f"🔒 **حظر جهاز:** `{device_name}`\n\n⏰ أدخل عدد الدقائق (1-59):",
+            text=f"🔒 **حظر جهاز:** `{device_name}`\n\n📝 **أرسل سبب الحظر أولاً:**\n(سيُطلب منك بعدها إدخال عدد الدقائق)",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
-        context.user_data['waiting_for_ban_duration'] = True
+        context.user_data['waiting_for_ban_reason'] = True
         return
     
     if data.startswith("ban_type_hours_"):
         device_name = data[15:]
         context.user_data['ban_device'] = device_name
         context.user_data['ban_type'] = "hours"
+        context.user_data['ban_unit'] = "hours"
         query.edit_message_text(
-            text=f"🔒 **حظر جهاز:** `{device_name}`\n\n🕐 أدخل عدد الساعات (1-23):",
+            text=f"🔒 **حظر جهاز:** `{device_name}`\n\n📝 **أرسل سبب الحظر أولاً:**\n(سيُطلب منك بعدها إدخال عدد الساعات)",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
-        context.user_data['waiting_for_ban_duration'] = True
+        context.user_data['waiting_for_ban_reason'] = True
         return
     
     if data.startswith("ban_type_days_"):
         device_name = data[14:]
         context.user_data['ban_device'] = device_name
         context.user_data['ban_type'] = "days"
+        context.user_data['ban_unit'] = "days"
         query.edit_message_text(
-            text=f"🔒 **حظر جهاز:** `{device_name}`\n\n📅 أدخل عدد الأيام (1-365):",
+            text=f"🔒 **حظر جهاز:** `{device_name}`\n\n📝 **أرسل سبب الحظر أولاً:**\n(سيُطلب منك بعدها إدخال عدد الأيام)",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
-        context.user_data['waiting_for_ban_duration'] = True
+        context.user_data['waiting_for_ban_reason'] = True
         return
     
-    # ========== تأكيد الحظر الدائم ==========
+    # ========== تأكيد الحظر الدائم (مع طلب السبب) ==========
     if data.startswith("ban_confirm_permanent_"):
         device_name = data[22:]
-        c.execute("SELECT username FROM approvals WHERE device_name = ? ORDER BY timestamp DESC LIMIT 1", (device_name,))
-        row = c.fetchone()
-        username = row[0] if row else "Unknown"
-        
-        ban_device(device_name, username, "permanent", 0, "حظر دائم من قبل المطور")
-        
-        keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة", callback_data="back_to_main")]]
+        context.user_data['ban_device'] = device_name
+        context.user_data['ban_type'] = "permanent"
+        context.user_data['ban_unit'] = "permanent"
         query.edit_message_text(
-            text=f"✅ **تم حظر الجهاز بنجاح!**\n\n📱 {device_name}\n🔒 حظر دائم",
-            parse_mode=telegram.ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            text=f"🔒 **حظر دائم لجهاز:** `{device_name}`\n\n📝 **أرسل سبب الحظر:**",
+            parse_mode=telegram.ParseMode.MARKDOWN
         )
+        context.user_data['waiting_for_ban_reason'] = True
         return
     
     # ========== اختيار جهاز لرفع الحظر ==========
@@ -995,12 +994,11 @@ def handle_callback(update, context):
         send_main_menu(chat_id)
         return
     
-    # ========== كلمة المرور المؤقتة (قائمة جديدة) ==========
+    # ========== كلمة المرور المؤقتة ==========
     if data == "menu_temp_password":
         show_temp_password_menu(chat_id, message_id)
         return
     
-    # ========== كلمة مرور مؤقتة لجهاز محدد ==========
     if data == "temp_specific_device":
         devices = get_all_known_devices()
         if not devices:
@@ -1020,7 +1018,6 @@ def handle_callback(update, context):
         )
         return
     
-    # ========== كلمة مرور مؤقتة لجميع الأجهزة ==========
     if data == "temp_all_devices":
         show_temp_password_duration_menu(chat_id, "all", "جميع الأجهزة", message_id, is_all_devices=True)
         return
@@ -1033,7 +1030,6 @@ def handle_callback(update, context):
         show_temp_password_duration_menu(chat_id, device_name, username, message_id, is_all_devices=False)
         return
     
-    # ========== اختيار المدة لجهاز محدد ==========
     if data.startswith("temp_duration_minutes_"):
         device_name = data[21:]
         context.user_data['temp_device'] = device_name
@@ -1070,7 +1066,6 @@ def handle_callback(update, context):
         context.user_data['waiting_for_temp_duration'] = True
         return
     
-    # ========== اختيار المدة لجميع الأجهزة ==========
     if data.startswith("temp_all_duration_minutes_"):
         device_name = data[24:]
         context.user_data['temp_device'] = "all"
@@ -1107,7 +1102,7 @@ def handle_callback(update, context):
         context.user_data['waiting_for_temp_duration'] = True
         return
     
-    # ========== إرسال الإشعارات ==========
+    # ========== إرسال الإشعارات (بدون عنوان) ==========
     if data == "menu_send_notification":
         show_send_notification_menu(chat_id, message_id)
         return
@@ -1117,9 +1112,9 @@ def handle_callback(update, context):
         return
     
     if data == "notify_all_devices":
-        context.user_data['waiting_for_broadcast_title'] = True
+        context.user_data['waiting_for_broadcast_message'] = True
         query.edit_message_text(
-            text="📢 **إرسال إشعار للجميع**\n\nأرسل عنوان الإشعار أولاً:",
+            text="📢 **إرسال إشعار للجميع**\n\n📝 أرسل نص الإشعار الآن:",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
         return
@@ -1127,9 +1122,9 @@ def handle_callback(update, context):
     if data.startswith("notify_device_"):
         device_name = data[14:]
         context.user_data['notify_device'] = device_name
-        context.user_data['waiting_for_notification_title'] = True
+        context.user_data['waiting_for_notification_message'] = True
         query.edit_message_text(
-            text=f"📢 **إرسال إشعار للجهاز:** `{device_name}`\n\nأرسل عنوان الإشعار أولاً:",
+            text=f"📢 **إرسال إشعار للجهاز:** `{device_name}`\n\n📝 أرسل نص الإشعار الآن:",
             parse_mode=telegram.ParseMode.MARKDOWN
         )
         return
@@ -1477,18 +1472,73 @@ def handle_message(update, context):
         bot.send_message(chat_id=chat_id, text="⚠️ أنت غير مصرح لك باستخدام هذا البوت")
         return
     
-    # معالجة إدخال مدة الحظر
+    # ========== معالجة سبب الحظر ==========
+    if context.user_data.get('waiting_for_ban_reason'):
+        ban_reason = text
+        device_name = context.user_data.get('ban_device')
+        ban_type = context.user_data.get('ban_type')
+        ban_unit = context.user_data.get('ban_unit')
+        
+        c.execute("SELECT username FROM approvals WHERE device_name = ? ORDER BY timestamp DESC LIMIT 1", (device_name,))
+        row = c.fetchone()
+        username = row[0] if row else "Unknown"
+        
+        context.user_data['ban_reason'] = ban_reason
+        
+        if ban_type == "permanent":
+            # حظر دائم مباشرة
+            ban_device(device_name, username, "permanent", 0, ban_reason)
+            bot.send_message(
+                chat_id=chat_id,
+                text=f"✅ **تم حظر الجهاز بنجاح!**\n\n📱 {device_name}\n🔒 حظر دائم\n📝 السبب: {ban_reason}",
+                parse_mode=telegram.ParseMode.MARKDOWN
+            )
+            context.user_data.pop('waiting_for_ban_reason', None)
+            context.user_data.pop('ban_device', None)
+            context.user_data.pop('ban_type', None)
+            context.user_data.pop('ban_unit', None)
+            context.user_data.pop('ban_reason', None)
+            send_main_menu(chat_id)
+            return
+        else:
+            # طلب المدة
+            context.user_data['waiting_for_ban_reason'] = False
+            context.user_data['waiting_for_ban_duration'] = True
+            
+            if ban_unit == "minutes":
+                bot.send_message(
+                    chat_id=chat_id,
+                    text=f"🔒 **حظر جهاز:** `{device_name}`\n📝 السبب: {ban_reason}\n\n⏰ أدخل عدد الدقائق (1-59):",
+                    parse_mode=telegram.ParseMode.MARKDOWN
+                )
+            elif ban_unit == "hours":
+                bot.send_message(
+                    chat_id=chat_id,
+                    text=f"🔒 **حظر جهاز:** `{device_name}`\n📝 السبب: {ban_reason}\n\n🕐 أدخل عدد الساعات (1-23):",
+                    parse_mode=telegram.ParseMode.MARKDOWN
+                )
+            elif ban_unit == "days":
+                bot.send_message(
+                    chat_id=chat_id,
+                    text=f"🔒 **حظر جهاز:** `{device_name}`\n📝 السبب: {ban_reason}\n\n📅 أدخل عدد الأيام (1-365):",
+                    parse_mode=telegram.ParseMode.MARKDOWN
+                )
+        return
+    
+    # ========== معالجة مدة الحظر ==========
     if context.user_data.get('waiting_for_ban_duration'):
         try:
             duration = int(text)
             ban_type = context.user_data.get('ban_type')
             device_name = context.user_data.get('ban_device')
+            ban_reason = context.user_data.get('ban_reason', 'محظور من قبل المطور')
             
             if ban_type == "minutes" and (duration < 1 or duration > 59):
                 bot.send_message(chat_id=chat_id, text="❌ عدد الدقائق يجب أن يكون بين 1 و 59")
                 context.user_data.pop('waiting_for_ban_duration', None)
                 context.user_data.pop('ban_device', None)
                 context.user_data.pop('ban_type', None)
+                context.user_data.pop('ban_reason', None)
                 send_main_menu(chat_id)
                 return
             elif ban_type == "hours" and (duration < 1 or duration > 23):
@@ -1496,6 +1546,7 @@ def handle_message(update, context):
                 context.user_data.pop('waiting_for_ban_duration', None)
                 context.user_data.pop('ban_device', None)
                 context.user_data.pop('ban_type', None)
+                context.user_data.pop('ban_reason', None)
                 send_main_menu(chat_id)
                 return
             elif ban_type == "days" and (duration < 1 or duration > 365):
@@ -1503,6 +1554,7 @@ def handle_message(update, context):
                 context.user_data.pop('waiting_for_ban_duration', None)
                 context.user_data.pop('ban_device', None)
                 context.user_data.pop('ban_type', None)
+                context.user_data.pop('ban_reason', None)
                 send_main_menu(chat_id)
                 return
             
@@ -1511,21 +1563,21 @@ def handle_message(update, context):
             username = row[0] if row else "Unknown"
             
             if ban_type == "minutes":
-                ban_device(device_name, username, "minutes", duration, f"حظر لمدة {duration} دقيقة")
+                ban_device(device_name, username, "minutes", duration, f"{ban_reason} (مدة: {duration} دقيقة)")
                 time_text = f"{duration} دقيقة"
             elif ban_type == "hours":
-                ban_device(device_name, username, "hours", duration, f"حظر لمدة {duration} ساعة")
+                ban_device(device_name, username, "hours", duration, f"{ban_reason} (مدة: {duration} ساعة)")
                 time_text = f"{duration} ساعة"
             elif ban_type == "days":
-                ban_device(device_name, username, "days", duration, f"حظر لمدة {duration} يوم")
+                ban_device(device_name, username, "days", duration, f"{ban_reason} (مدة: {duration} يوم)")
                 time_text = f"{duration} يوم"
             else:
-                ban_device(device_name, username, "permanent", 0, "حظر دائم")
+                ban_device(device_name, username, "permanent", 0, ban_reason)
                 time_text = "دائم"
             
             bot.send_message(
                 chat_id=chat_id,
-                text=f"✅ **تم حظر الجهاز بنجاح!**\n\n📱 {device_name}\n⏰ مدة الحظر: {time_text}",
+                text=f"✅ **تم حظر الجهاز بنجاح!**\n\n📱 {device_name}\n⏰ مدة الحظر: {time_text}\n📝 السبب: {ban_reason}",
                 parse_mode=telegram.ParseMode.MARKDOWN
             )
             
@@ -1535,10 +1587,11 @@ def handle_message(update, context):
         context.user_data.pop('waiting_for_ban_duration', None)
         context.user_data.pop('ban_device', None)
         context.user_data.pop('ban_type', None)
+        context.user_data.pop('ban_reason', None)
         send_main_menu(chat_id)
         return
     
-    # معالجة مدة كلمة المرور المؤقتة
+    # ========== معالجة مدة كلمة المرور المؤقتة ==========
     if context.user_data.get('waiting_for_temp_duration'):
         try:
             duration = int(text)
@@ -1579,7 +1632,50 @@ def handle_message(update, context):
         send_main_menu(chat_id)
         return
     
-    # معالجة تغيير رسالة الترحيب
+    # ========== معالجة إشعار لجهاز محدد (بدون عنوان) ==========
+    if context.user_data.get('waiting_for_notification_message'):
+        message_text = text
+        device_name = context.user_data.get('notify_device')
+        
+        c.execute("""INSERT INTO notifications (device_name, message, created_at, is_read)
+                     VALUES (?, ?, ?, 0)""",
+                  (device_name, message_text, int(time.time())))
+        conn.commit()
+        
+        bot.send_message(
+            chat_id=chat_id,
+            text=f"✅ **تم إرسال الإشعار بنجاح!**\n\n📱 الجهاز: `{device_name}`\n💬 الرسالة: {message_text}",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        
+        context.user_data.pop('waiting_for_notification_message', None)
+        context.user_data.pop('notify_device', None)
+        send_main_menu(chat_id)
+        return
+    
+    # ========== معالجة إشعار للجميع (بدون عنوان) ==========
+    if context.user_data.get('waiting_for_broadcast_message'):
+        message_text = text
+        
+        devices = get_active_devices()
+        for device in devices:
+            device_name = device[0]
+            c.execute("""INSERT INTO notifications (device_name, message, created_at, is_read)
+                         VALUES (?, ?, ?, 0)""",
+                      (device_name, message_text, int(time.time())))
+        conn.commit()
+        
+        bot.send_message(
+            chat_id=chat_id,
+            text=f"✅ **تم إرسال الإشعار للجميع بنجاح!**\n\n💬 الرسالة: {message_text}\n📱 عدد الأجهزة: {len(devices)}",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        
+        context.user_data.pop('waiting_for_broadcast_message', None)
+        send_main_menu(chat_id)
+        return
+    
+    # ========== معالجة تغيير رسالة الترحيب ==========
     if context.user_data.get('waiting_for_welcome_template'):
         new_template = text.strip()
         if '&' in new_template:
@@ -1599,78 +1695,7 @@ def handle_message(update, context):
         send_main_menu(chat_id)
         return
     
-    # معالجة إرسال إشعار لجهاز محدد
-    if context.user_data.get('waiting_for_notification_title'):
-        context.user_data['notification_title'] = text
-        context.user_data['waiting_for_notification_title'] = False
-        context.user_data['waiting_for_notification_message'] = True
-        bot.send_message(
-            chat_id=chat_id,
-            text="📝 **أرسل نص الإشعار الآن:**",
-            parse_mode=telegram.ParseMode.MARKDOWN
-        )
-        return
-    
-    if context.user_data.get('waiting_for_notification_message'):
-        title = context.user_data.get('notification_title', 'تطبيق TOMB')
-        message = text
-        device_name = context.user_data.get('notify_device')
-        
-        c.execute("""INSERT INTO notifications (device_name, title, message, created_at, is_read)
-                     VALUES (?, ?, ?, ?, 0)""",
-                  (device_name, title, message, int(time.time())))
-        conn.commit()
-        
-        bot.send_message(
-            chat_id=chat_id,
-            text=f"✅ **تم إرسال الإشعار بنجاح!**\n\n📱 الجهاز: `{device_name}`\n📌 العنوان: {title}\n💬 الرسالة: {message}",
-            parse_mode=telegram.ParseMode.MARKDOWN
-        )
-        
-        context.user_data.pop('waiting_for_notification_title', None)
-        context.user_data.pop('waiting_for_notification_message', None)
-        context.user_data.pop('notification_title', None)
-        context.user_data.pop('notify_device', None)
-        send_main_menu(chat_id)
-        return
-    
-    # معالجة إرسال إشعار للجميع
-    if context.user_data.get('waiting_for_broadcast_title'):
-        context.user_data['broadcast_title'] = text
-        context.user_data['waiting_for_broadcast_title'] = False
-        context.user_data['waiting_for_broadcast_message'] = True
-        bot.send_message(
-            chat_id=chat_id,
-            text="📝 **أرسل نص الإشعار للجميع الآن:**",
-            parse_mode=telegram.ParseMode.MARKDOWN
-        )
-        return
-    
-    if context.user_data.get('waiting_for_broadcast_message'):
-        title = context.user_data.get('broadcast_title', 'تطبيق TOMB')
-        message = text
-        
-        devices = get_active_devices()
-        for device in devices:
-            device_name = device[0]
-            c.execute("""INSERT INTO notifications (device_name, title, message, created_at, is_read)
-                         VALUES (?, ?, ?, ?, 0)""",
-                      (device_name, title, message, int(time.time())))
-        conn.commit()
-        
-        bot.send_message(
-            chat_id=chat_id,
-            text=f"✅ **تم إرسال الإشعار للجميع بنجاح!**\n\n📌 العنوان: {title}\n💬 الرسالة: {message}\n📱 عدد الأجهزة: {len(devices)}",
-            parse_mode=telegram.ParseMode.MARKDOWN
-        )
-        
-        context.user_data.pop('waiting_for_broadcast_title', None)
-        context.user_data.pop('waiting_for_broadcast_message', None)
-        context.user_data.pop('broadcast_title', None)
-        send_main_menu(chat_id)
-        return
-    
-    # معالجة تغيير كلمة المرور
+    # ========== معالجة تغيير كلمة المرور ==========
     if context.user_data.get('waiting_for_new_password'):
         new_password = text.strip()
         if len(new_password) >= 4:
@@ -1685,26 +1710,6 @@ def handle_message(update, context):
         else:
             bot.send_message(chat_id=chat_id, text="❌ كلمة المرور يجب أن تكون 4 أحرف على الأقل")
         context.user_data.pop('waiting_for_new_password')
-        send_main_menu(chat_id)
-        return
-    
-    # معالجة طلب تغيير رسالة الترحيب عبر النص
-    if context.user_data.get('waiting_for_welcome_template_text'):
-        new_template = text.strip()
-        if '&' in new_template:
-            set_setting("welcome_message_template", new_template)
-            bot.send_message(
-                chat_id=chat_id,
-                text=f"✅ **تم تغيير رسالة الترحيب بنجاح!**\n\nالرسالة الجديدة: `{new_template}`",
-                parse_mode=telegram.ParseMode.MARKDOWN
-            )
-        else:
-            bot.send_message(
-                chat_id=chat_id,
-                text="❌ **الرسالة يجب أن تحتوي على الرمز `&`**",
-                parse_mode=telegram.ParseMode.MARKDOWN
-            )
-        context.user_data.pop('waiting_for_welcome_template_text')
         send_main_menu(chat_id)
         return
     
@@ -1748,8 +1753,14 @@ def home():
     return jsonify({
         "status": "online",
         "service": "Tomb Bot Protection System",
-        "version": "6.2",
+        "version": "7.0",
         "message": "API is working! (Permanent passwords for approved devices, Temporary passwords with expiration)",
+        "features": [
+            "Ban with reason",
+            "Notifications without title",
+            "Temporary passwords",
+            "Auto-login for approved devices"
+        ],
         "endpoints": [
             "/request_access - POST",
             "/check_status/<request_id> - GET", 
@@ -2163,7 +2174,6 @@ def refresh_device_status():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ===================== نقطة النهاية الجديدة =====================
 @app.route('/update_device_last_login', methods=['POST'])
 def update_device_last_login_endpoint():
     """تحديث آخر تسجيل دخول للجهاز المعتمد"""
@@ -2186,7 +2196,7 @@ def update_device_last_login_endpoint():
 @app.route('/get_notifications/<device_name>', methods=['GET'])
 def get_notifications(device_name):
     try:
-        c.execute("""SELECT id, title, message, created_at, is_read 
+        c.execute("""SELECT id, message, created_at, is_read 
                      FROM notifications WHERE device_name = ? OR device_name = 'all'
                      ORDER BY created_at DESC LIMIT 50""", (device_name,))
         rows = c.fetchall()
@@ -2195,10 +2205,9 @@ def get_notifications(device_name):
         for row in rows:
             notifications.append({
                 "id": row[0],
-                "title": row[1],
-                "message": row[2],
-                "created_at": row[3],
-                "is_read": row[4]
+                "message": row[1],
+                "created_at": row[2],
+                "is_read": row[3]
             })
         
         return jsonify({"notifications": notifications})
@@ -2219,7 +2228,7 @@ def health():
     return jsonify({
         "status": "ok",
         "bot": "running",
-        "version": "6.2",
+        "version": "7.0",
         "timestamp": int(time.time())
     })
 
