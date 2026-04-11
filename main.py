@@ -13,7 +13,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters
 
 # ===================== الإعدادات =====================
-BOT_TOKEN = '8618535073:AAEK5fucW34Ir2oQg1LLHKDqiNv9K0Qvfjs'
+BOT_TOKEN = '8513010794:AAG4J4n6dZd7MFmEntIP4oTNqc_6y6vWwrs'
 MASTER_ADMIN_ID = '8311254462'  # هذا المعرف لا يمكن حذفه أبداً
 app = Flask(__name__)
 CORS(app)
@@ -576,7 +576,6 @@ def show_pending_requests_with_buttons(chat_id, message_id=None):
         keyboard = []
         for req in pending_reqs:
             req_id, username, device_name, timestamp = req
-            time_str = datetime.fromtimestamp(timestamp).strftime('%H:%M:%S')
             keyboard.append([
                 InlineKeyboardButton(f"✅ {username} - {device_name[:15]}", callback_data=f"approve_{req_id}"),
                 InlineKeyboardButton(f"❌ رفض", callback_data=f"deny_{req_id}")
@@ -880,33 +879,15 @@ def create_temp_password_for_device(device_name, duration, unit, is_all_devices=
     """إنشاء كلمة مرور مؤقتة لجهاز أو لجميع الأجهزة"""
     now = int(time.time())
     
-    # تأكد من صحة الوحدة
-    if unit is None:
-        unit = "minutes"
-        print("WARNING: unit is None, defaulting to minutes")
-    
-    print(f"DEBUG: Creating temp password - device: {device_name}, duration: {duration}, unit: {unit}, is_all: {is_all_devices}")
-    
     if unit == "minutes":
         expires_at = now + (duration * 60)
         time_text = f"{duration} دقيقة"
-        print(f"DEBUG: expires in {duration} minutes = {duration * 60} seconds")
     elif unit == "hours":
         expires_at = now + (duration * 3600)
         time_text = f"{duration} ساعة"
-        print(f"DEBUG: expires in {duration} hours = {duration * 3600} seconds")
-    elif unit == "days":
+    else:
         expires_at = now + (duration * 86400)
         time_text = f"{duration} يوم"
-        print(f"DEBUG: expires in {duration} days = {duration * 86400} seconds")
-    else:
-        # إذا كانت الوحدة غير معروفة، استخدم الدقائق
-        expires_at = now + (duration * 60)
-        time_text = f"{duration} دقيقة (افتراضي)"
-        print(f"WARNING: Unknown unit '{unit}', using minutes")
-    
-    print(f"DEBUG: now={now}, expires_at={expires_at}, diff={expires_at - now} seconds")
-    print(f"DEBUG: expires_at datetime: {datetime.fromtimestamp(expires_at)}")
     
     # إنشاء كلمة مرور مؤقتة
     temp_password = hashlib.md5(f"{device_name}{time.time()}{is_all_devices}".encode()).hexdigest()[:8]
@@ -1644,14 +1625,12 @@ def handle_message(update, context):
     if context.user_data.get('waiting_for_new_user_id'):
         try:
             new_user_id = text.strip()
-            # التحقق من أن الإدخال رقم
             if not new_user_id.isdigit():
                 bot.send_message(chat_id=chat_id, text="❌ معرف المستخدم يجب أن يكون أرقاماً فقط")
                 context.user_data.pop('waiting_for_new_user_id', None)
                 send_main_menu(chat_id)
                 return
             
-            # الحصول على اسم المستخدم (اختياري)
             username = f"user_{new_user_id}"
             added_by = str(chat_id)
             
@@ -1683,7 +1662,6 @@ def handle_message(update, context):
         context.user_data['ban_reason'] = ban_reason
         
         if ban_type == "permanent":
-            # حظر دائم مباشرة
             ban_device(device_name, username, "permanent", 0, ban_reason)
             bot.send_message(
                 chat_id=chat_id,
@@ -1697,7 +1675,6 @@ def handle_message(update, context):
             send_main_menu(chat_id)
             return
         else:
-            # طلب المدة
             context.user_data['waiting_for_ban_reason'] = False
             context.user_data['waiting_for_ban_duration'] = True
             
@@ -1791,11 +1768,6 @@ def handle_message(update, context):
             device_name = context.user_data.get('temp_device')
             is_all_devices = context.user_data.get('temp_all_devices', False)
             
-            # تأكد من صحة الوحدة
-            if unit is None:
-                unit = "minutes"
-                print("WARNING: unit is None in handle_message, defaulting to minutes")
-            
             if unit == "minutes" and (duration < 1 or duration > 59):
                 bot.send_message(chat_id=chat_id, text="❌ عدد الدقائق يجب أن يكون بين 1 و 59")
             elif unit == "hours" and (duration < 1 or duration > 23):
@@ -1807,24 +1779,15 @@ def handle_message(update, context):
                     device_name, duration, unit, is_all_devices
                 )
                 
-                # إضافة زر نسخ لكلمة المرور
-                copy_button = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📋 نسخ كلمة المرور", callback_data=f"copy_{temp_password}")]
-                ])
-                
                 if is_all_devices:
                     bot.send_message(
                         chat_id=chat_id,
-                        text=f"✅ تم إنشاء كلمة مرور مؤقتة لجميع الأجهزة!\n\n🔑 كلمة المرور: `{temp_password}`\n⏰ المدة: {time_text}\n\n⚠️ هذه الكلمة صالحة لجميع الأجهزة النشطة.\nبعد انتهاء المدة سيتم إرجاع جميع المستخدمين لشاشة تسجيل الدخول.\n\n📋 اضغط على زر النسخ لنسخ كلمة المرور:",
-                        parse_mode=telegram.ParseMode.MARKDOWN,
-                        reply_markup=copy_button
+                        text=f"✅ تم إنشاء كلمة مرور مؤقتة لجميع الأجهزة!\n\n🔑 كلمة المرور: {temp_password}\n⏰ المدة: {time_text}\n\n⚠️ هذه الكلمة صالحة لجميع الأجهزة النشطة.\nبعد انتهاء المدة سيتم إرجاع جميع المستخدمين لشاشة تسجيل الدخول."
                     )
                 else:
                     bot.send_message(
                         chat_id=chat_id,
-                        text=f"✅ تم إنشاء كلمة مرور مؤقتة!\n\n📱 الجهاز: `{device_name}`\n🔑 كلمة المرور: `{temp_password}`\n⏰ المدة: {time_text}\n\n⚠️ بعد انتهاء المدة سيتم إرجاع المستخدم لشاشة تسجيل الدخول.\n\n📋 اضغط على زر النسخ لنسخ كلمة المرور:",
-                        parse_mode=telegram.ParseMode.MARKDOWN,
-                        reply_markup=copy_button
+                        text=f"✅ تم إنشاء كلمة مرور مؤقتة!\n\n📱 الجهاز: {device_name}\n🔑 كلمة المرور: {temp_password}\n⏰ المدة: {time_text}\n\n⚠️ بعد انتهاء المدة سيتم إرجاع المستخدم لشاشة تسجيل الدخول."
                     )
         except ValueError:
             bot.send_message(chat_id=chat_id, text="❌ الرجاء إدخال رقم صحيح")
@@ -1836,7 +1799,7 @@ def handle_message(update, context):
         send_main_menu(chat_id)
         return
     
-    # ========== معالجة إشعار لجهاز محدد (بدون عنوان) ==========
+    # ========== معالجة إشعار لجهاز محدد ==========
     if context.user_data.get('waiting_for_notification_message'):
         message_text = text
         device_name = context.user_data.get('notify_device')
@@ -1856,7 +1819,7 @@ def handle_message(update, context):
         send_main_menu(chat_id)
         return
     
-    # ========== معالجة إشعار للجميع (بدون عنوان) ==========
+    # ========== معالجة إشعار للجميع ==========
     if context.user_data.get('waiting_for_broadcast_message'):
         message_text = text
         
@@ -1900,16 +1863,9 @@ def handle_message(update, context):
         new_password = text.strip()
         if len(new_password) >= 4:
             if update_password(new_password, "bot"):
-                # إضافة زر نسخ لكلمة المرور الجديدة
-                copy_button = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📋 نسخ كلمة المرور", callback_data=f"copy_{new_password}")]
-                ])
-                
                 bot.send_message(
                     chat_id=chat_id,
-                    text=f"✅ تم تغيير كلمة مرور التطبيق بنجاح!\n\n🔑 كلمة المرور الجديدة: `{new_password}`\n\n⚠️ كلمة المرور الأساسية لا تنتهي أبداً\n\n📋 اضغط على زر النسخ لنسخ كلمة المرور:",
-                    parse_mode=telegram.ParseMode.MARKDOWN,
-                    reply_markup=copy_button
+                    text=f"✅ تم تغيير كلمة مرور التطبيق بنجاح!\n\n🔑 كلمة المرور الجديدة: {new_password}\n\n⚠️ كلمة المرور الأساسية لا تنتهي أبداً"
                 )
             else:
                 bot.send_message(chat_id=chat_id, text="❌ فشل في تغيير كلمة المرور")
@@ -1917,17 +1873,6 @@ def handle_message(update, context):
             bot.send_message(chat_id=chat_id, text="❌ كلمة المرور يجب أن تكون 4 أحرف على الأقل")
         context.user_data.pop('waiting_for_new_password')
         send_main_menu(chat_id)
-        return
-    
-    # ========== معالجة طلب نسخ كلمة المرور ==========
-    if data.startswith("copy_"):
-        password_to_copy = data[5:]
-        # إرسال رسالة تحتوي على كلمة المرور لنسخها بسهولة
-        bot.send_message(
-            chat_id=chat_id,
-            text=f"📋 كلمة المرور: `{password_to_copy}`\n\nيمكنك نسخها من هذه الرسالة.",
-            parse_mode=telegram.ParseMode.MARKDOWN
-        )
         return
     
     if text == '/start':
@@ -1956,7 +1901,7 @@ bot_thread.start()
 # تشغيل مهمة تنظيف الجلسات المنتهية كل ساعة
 def cleanup_scheduler():
     while True:
-        time.sleep(3600)  # كل ساعة
+        time.sleep(3600)
         cleanup_expired_temp_sessions()
         print(f"[CLEANUP] Cleaned expired temp sessions at {datetime.now()}")
 
@@ -1978,8 +1923,7 @@ def home():
             "Temporary passwords",
             "Auto-login for approved devices",
             "Multi-user support (authorized users)",
-            "Pending requests with approve/deny buttons",
-            "Copy password button"
+            "Pending requests with approve/deny buttons"
         ],
         "endpoints": [
             "/request_access - POST",
@@ -2020,7 +1964,6 @@ def request_access():
         
         print(f"📱 New request from {device_name} - ID: {request_id}")
         
-        # التحقق من الحظر
         if is_device_banned(device_name):
             ban_info = get_device_ban_info(device_name)
             return jsonify({
@@ -2032,7 +1975,6 @@ def request_access():
                 "remaining_text": ban_info.get('remaining_text', '')
             })
         
-        # التحقق مما إذا كان الجهاز معتمداً بالفعل (كلمة أساسية سابقة - لا تنتهي أبداً)
         if is_device_approved(device_name):
             update_device_last_login(device_name)
             add_active_device(device_name, username, device_info)
@@ -2046,7 +1988,6 @@ def request_access():
                 "note": "كلمة المرور الأساسية لا تنتهي أبداً"
             })
         
-        # إرسال طلب موافقة للمطورين المصرح لهم
         send_approval_request(
             request_id=request_id,
             app_name=app_name,
@@ -2116,14 +2057,12 @@ def verify_temp_password():
         
         temp_hash = hashlib.sha256(temp_password.encode()).hexdigest()
         
-        # التحقق من كلمة المرور المؤقتة للجهاز المحدد أو لجميع الأجهزة
         c.execute("""SELECT id, expires_at, device_name FROM temp_passwords 
                      WHERE password_hash = ? AND (device_name = ? OR device_name = 'all') AND used = 0 AND expires_at > ?""",
                   (temp_hash, device_name, int(time.time())))
         row = c.fetchone()
         
         if row:
-            # نستخدم الكلمة مرة واحدة
             c.execute("UPDATE temp_passwords SET used = 1 WHERE id = ?", (row[0],))
             conn.commit()
             return jsonify({"valid": True, "expires_at": row[1], "note": "كلمة مرور مؤقتة تنتهي بعد المدة"})
@@ -2271,7 +2210,6 @@ def notify_app_opened():
 
 ✅ هذا مجرد إشعار بفتح التطبيق، ليس طلب موافقة
 """
-        # إرسال الإشعار لجميع المستخدمين المصرح لهم
         users = get_authorized_users()
         for user in users:
             try:
@@ -2307,7 +2245,6 @@ def check_session():
                 "remaining": ban_info.get('remaining_text', '')
             })
         
-        # التحقق من الأجهزة المعتمدة (كلمة أساسية - لا تنتهي أبداً)
         if is_device_approved(device_name):
             update_device_last_login(device_name)
             return jsonify({
@@ -2318,7 +2255,6 @@ def check_session():
                 "remaining_text": "لا تنتهي أبداً (كلمة المرور الأساسية)"
             })
         
-        # التحقق من الجلسات المؤقتة
         c.execute("SELECT session_expires, session_type FROM active_sessions WHERE device_name = ?", (device_name,))
         row = c.fetchone()
         
@@ -2404,7 +2340,6 @@ def refresh_device_status():
 
 @app.route('/update_device_last_login', methods=['POST'])
 def update_device_last_login_endpoint():
-    """تحديث آخر تسجيل دخول للجهاز المعتمد"""
     try:
         data = request.json
         device_name = data.get('device_name', '')
