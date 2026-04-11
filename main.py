@@ -13,7 +13,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters
 
 # ===================== الإعدادات =====================
-BOT_TOKEN = '8513010794:AAG4J4n6dZd7MFmEntIP4oTNqc_6y6vWwrs'
+BOT_TOKEN = '8618535073:AAEK5fucW34Ir2oQg1LLHKDqiNv9K0Qvfjs'
 MASTER_ADMIN_ID = '8311254462'  # هذا المعرف لا يمكن حذفه أبداً
 app = Flask(__name__)
 CORS(app)
